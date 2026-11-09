@@ -1,5 +1,4 @@
 out/
-third_party/
 __pycache__/
 *.o
 *.stackdump

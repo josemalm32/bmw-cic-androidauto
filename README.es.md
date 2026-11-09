@@ -82,14 +82,31 @@ Para actualizar, repite el proceso con la versión nueva. Para desinstalar, borr
 
 ## Compilar
 
-Necesitas, por tu cuenta:
+### 1. Descargar el código (con mbed TLS)
 
-* **QNX Momentics 6.3** con la toolchain SH (`ntosh-gcc-3.3.5`, `ntosh-g++-3.3.5`,
-  `ntosh-as`, `ntosh-ld`, `ntosh-strip`) y su `target/qnx6` (libc SH LE, cabeceras).
-* **mbed TLS 3.6.7** (código fuente, Apache-2.0).
-* Python 3.8 o superior.
+mbed TLS 3.6.7 (Apache-2.0) va incluido como submódulo git en
+`third_party/mbedtls`, así que lo único que tienes que conseguir por tu cuenta es la
+toolchain de QNX. Clona con los submódulos:
 
-### Toolchain QNX
+```bash
+git clone --recursive https://github.com/josemalm32/bmw-cic-androidauto.git
+cd bmw-cic-androidauto
+```
+
+Si ya lo clonaste sin `--recursive`, o descargaste un zip del código:
+
+```bash
+git submodule update --init third_party/mbedtls
+```
+
+(El «Download ZIP» de GitHub no incluye los submódulos. En ese caso descarga
+mbed TLS 3.6.7 de <https://github.com/Mbed-TLS/mbedtls/releases/tag/mbedtls-3.6.7>
+y descomprímelo de forma que exista `third_party/mbedtls/library/ssl_tls.c`.)
+
+`build.py` aplica nuestro pequeño parche de `patches/` (UTCTime con zona horaria en
+los certificados de head unit) a una copia en `out/build/`; el submódulo no se toca.
+
+### 2. Toolchain QNX
 
 * Hace falta **QNX Momentics Development Suite 6.3.x para Windows**, con licencia
   propia de QNX (BlackBerry QNX). Este proyecto no la incluye ni la distribuye.
@@ -98,6 +115,10 @@ Necesitas, por tu cuenta:
   `QNX_HOST` y `QNX_TARGET`.
 * Comprobación: `ntosh-gcc-3.3.5 --version` debe responder `3.3.5 (qnx-nto)` y
   debe existir `target/qnx6/shle/lib/libc.so.2`.
+
+También necesitas Python 3.8 o superior.
+
+### 3. Compilar
 
 ```bash
 python tools/build.py
@@ -109,9 +130,10 @@ Variables de entorno (opcionales):
 |---|---|
 | `QNX_HOST` | `C:/QNX630/host/win32/x86` |
 | `QNX_TARGET` | `C:/QNX630/target/qnx6` |
-| `MBEDTLS_DIR` | `third_party/mbedtls-3.6.7` |
+| `MBEDTLS_DIR` | `third_party/mbedtls` |
 
-El resultado queda en `out/usb/` (listo para el pendrive) y los binarios en
+El resultado queda en `out/usb/` (listo para el pendrive), en
+`out/AAPlugin-<versión>-usb.zip` (lo mismo más las licencias) y los binarios en
 `out/build/`. Las librerías del coche (`libCoreFramework`, `libAppFramework`,
 `libdspipc`...) no hacen falta: `build.py` genera stubs solo para enlazar, a partir
 de las listas de símbolos de `tools/`.
@@ -126,6 +148,8 @@ src/cicaalive/              proceso que alimenta el DSP DM642 (H.264 + AAC) por 
 src/dspload/                parche/carga de la imagen DSP, verificación y reinicio
 installer/copie_scr.plain.sh  instalador (build.py lo codifica a copie_scr.sh)
 tools/build.py              compila todo y prepara el pendrive
+patches/                    nuestro parche a mbed TLS (se aplica a una copia al compilar)
+third_party/mbedtls         mbed TLS 3.6.7 (submódulo git)
 tools/encdec_sh.py          codificación de copie_scr.sh que espera el CIC
 docs/ARQUITECTURA.md        cómo funciona por dentro
 ```

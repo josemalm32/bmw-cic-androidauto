@@ -5,7 +5,7 @@ Requirements (not included, get them yourself):
   * QNX Momentics 6.3 SH4 toolchain (ntosh-gcc-3.3.5, ntosh-g++-3.3.5, ntosh-as, ntosh-ld, ntosh-strip)
     QNX_HOST   default C:/QNX630/host/win32/x86
     QNX_TARGET default C:/QNX630/target/qnx6   (needs shle/lib/libc.so.2, usr/include)
-  * mbed TLS 3.6.7 source tree (Apache-2.0), MBEDTLS_DIR default third_party/mbedtls-3.6.7
+  * mbed TLS 3.6.7 source tree (Apache-2.0), MBEDTLS_DIR default third_party/mbedtls (git submodule, tag v3.6.7)
   * Python 3.8+
 
 Usage:  python tools/build.py [--out out]
@@ -74,6 +74,38 @@ def stub_lib(t, out, soname, names):
     return out / soname
 
 
+def apply_patch(text, patch):
+    """Minimal unified-diff applier (context must match exactly once)."""
+    hunks, cur = [], None
+    for line in patch.splitlines():
+        if line.startswith('@@'):
+            cur = ([], []); hunks.append(cur)
+        elif cur is not None and line[:1] in (' ', '-', '+', ''):
+            tag, body = (line[:1] or ' '), line[1:]
+            if tag in ' -': cur[0].append(body)
+            if tag in ' +': cur[1].append(body)
+    for old, new in hunks:
+        o, n = '\n'.join(old) + '\n', '\n'.join(new) + '\n'
+        if text.count(o) != 1:
+            raise SystemExit('mbed TLS patch does not apply: wrong mbed TLS version? (need v3.6.7)')
+        text = text.replace(o, n)
+    return text
+
+
+def patched_sources(b, mbedtls):
+    """Our patches are applied to copies in out/build; the submodule is never modified."""
+    out = {}
+    for pf in sorted((ROOT / 'patches').glob('mbedtls-*.patch')):
+        patch = pf.read_text()
+        rel = patch.splitlines()[0].split()[1][2:]          # '--- a/library/x509.c'
+        src = (mbedtls / rel).read_bytes().decode('latin-1').replace('\r\n', '\n')
+        dst = b / 'patched' / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(apply_patch(src, patch).encode('latin-1'))
+        out[Path(rel).name] = dst
+    return out
+
+
 def build_libcicaa(t, b, mbedtls):
     obj = b / 'obj'
     obj.mkdir(parents=True, exist_ok=True)
@@ -81,12 +113,14 @@ def build_libcicaa(t, b, mbedtls):
            '-I' + str(mbedtls / 'include'), '-I' + str(mbedtls / 'library')]
     flags = ['-m4', '-ml', '-std=c99', '-D_QNX_SOURCE', '-fPIC', '-Os', '-Wall',
              '-DMBEDTLS_CONFIG_FILE=<cicaa_config.h>'] + inc
-    srcs = [f for f in sorted((mbedtls / 'library').glob('*.c')) if f.name not in ('net_sockets.c', 'timing.c')]
+    patched = patched_sources(b, mbedtls)
+    srcs = [patched.get(f.name, f) for f in sorted((mbedtls / 'library').glob('*.c'))
+            if f.name not in ('net_sockets.c', 'timing.c')]
     srcs += [SRC / 'libcicaa' / (n + '.c') for n in ('aa_core', 'aa_usb_qnx', 'cicaa', 'aa_video', 'aa_video_native')]
     objs = []
     for f in srcs:
         o = obj / (f.stem + '.o')
-        if not o.exists() or o.stat().st_mtime < f.stat().st_mtime or f.parent.name == 'libcicaa':
+        if not o.exists() or o.stat().st_mtime < f.stat().st_mtime or f in patched.values() or f.parent.name == 'libcicaa':
             t.run('ntosh-gcc-3.3.5', flags + ['-c', f, '-o', o])
         objs.append(o)
     lib = b / 'libcicaa.so'
@@ -146,7 +180,7 @@ def main():
     out = Path(args.out)
     b = out / 'build'
     b.mkdir(parents=True, exist_ok=True)
-    mbedtls = Path(os.environ.get('MBEDTLS_DIR', ROOT / 'third_party/mbedtls-3.6.7'))
+    mbedtls = Path(os.environ.get('MBEDTLS_DIR', ROOT / 'third_party/mbedtls'))
     if not (mbedtls / 'library/ssl_tls.c').exists():
         raise SystemExit(f'mbed TLS 3.6.7 not found at {mbedtls} (set MBEDTLS_DIR)')
     t = Tool()

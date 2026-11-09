@@ -82,14 +82,31 @@ To update, repeat the steps with the new version. To uninstall, delete
 
 ## Building
 
-You need, on your own:
+### 1. Get the source (with mbed TLS)
 
-* **QNX Momentics 6.3** with the SH toolchain (`ntosh-gcc-3.3.5`, `ntosh-g++-3.3.5`,
-  `ntosh-as`, `ntosh-ld`, `ntosh-strip`) and its `target/qnx6` (SH LE libc, headers).
-* **mbed TLS 3.6.7** source tree (Apache-2.0).
-* Python 3.8 or newer.
+mbed TLS 3.6.7 (Apache-2.0) is included as a git submodule in
+`third_party/mbedtls`, so the only thing you need to get on your own is the QNX
+toolchain. Clone with submodules:
 
-### QNX toolchain
+```bash
+git clone --recursive https://github.com/josemalm32/bmw-cic-androidauto.git
+cd bmw-cic-androidauto
+```
+
+If you already cloned without `--recursive`, or downloaded a zip of the code:
+
+```bash
+git submodule update --init third_party/mbedtls
+```
+
+(A GitHub "Download ZIP" does not include submodules. In that case download
+mbed TLS 3.6.7 from <https://github.com/Mbed-TLS/mbedtls/releases/tag/mbedtls-3.6.7>
+and extract it so that `third_party/mbedtls/library/ssl_tls.c` exists.)
+
+`build.py` applies our small patch in `patches/` (UTCTime with timezone in
+head-unit certificates) to a copy in `out/build/`; the submodule is never modified.
+
+### 2. QNX toolchain
 
 * You need **QNX Momentics Development Suite 6.3.x for Windows**, under your own
   license from QNX (BlackBerry QNX). This project does not include or distribute it.
@@ -98,6 +115,10 @@ You need, on your own:
   `QNX_TARGET`.
 * Check: `ntosh-gcc-3.3.5 --version` must print `3.3.5 (qnx-nto)` and
   `target/qnx6/shle/lib/libc.so.2` must exist.
+
+You also need Python 3.8 or newer.
+
+### 3. Build
 
 ```bash
 python tools/build.py
@@ -109,9 +130,10 @@ Environment variables (optional):
 |---|---|
 | `QNX_HOST` | `C:/QNX630/host/win32/x86` |
 | `QNX_TARGET` | `C:/QNX630/target/qnx6` |
-| `MBEDTLS_DIR` | `third_party/mbedtls-3.6.7` |
+| `MBEDTLS_DIR` | `third_party/mbedtls` |
 
-The result is `out/usb/` (ready for the stick) plus the binaries in `out/build/`.
+The result is `out/usb/` (ready for the stick), `out/AAPlugin-<version>-usb.zip`
+(the same plus license files) and the binaries in `out/build/`.
 The car's libraries (`libCoreFramework`, `libAppFramework`, `libdspipc`...) are not
 needed: `build.py` generates link-only stubs from the symbol lists in `tools/`.
 
@@ -125,6 +147,8 @@ src/cicaalive/                process feeding the DM642 DSP (H.264 + AAC) over d
 src/dspload/                  DSP image patch/load, file compare, reboot
 installer/copie_scr.plain.sh  installer (build.py encodes it to copie_scr.sh)
 tools/build.py                builds everything and stages the USB stick
+patches/                      our patch to mbed TLS (applied to a copy at build time)
+third_party/mbedtls           mbed TLS 3.6.7 (git submodule)
 tools/encdec_sh.py            copie_scr.sh encoding expected by the CIC
 docs/ARQUITECTURA.md          how it works inside (Spanish)
 ```

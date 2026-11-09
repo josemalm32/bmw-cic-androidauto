@@ -24,7 +24,7 @@ Known issues: occasional short audio cuts or video freezes when the DSP is at 10
 
 ## Compatibility
 
-* **Only CIC HIGH with HmiMain 9283417A** (tested on an E9x). The plugin calls
+* **Only CIC HIGH with HmiMain 9283417A, i.e. CIC software version C1A** (tested on an E9x). The plugin calls
   internal HmiMain functions at fixed addresses; before using them it compares their
   code against signatures. If your HmiMain differs, the plugin touches nothing and
   shows "HmiMain distinto: no compatible".

@@ -183,7 +183,7 @@ def main():
         z.write(ROOT / 'NOTICE.md', 'AAPLUGIN-NOTICE.md')
         z.write(mbedtls / 'LICENSE', 'MBEDTLS-LICENSE.txt')
         z.writestr('AAPLUGIN-INSTALL.txt',
-                   f'AAPlugin {ver} - Android Auto for BMW CIC HIGH (HmiMain 9283417A)\r\n'
+                   f'AAPlugin {ver} - Android Auto for BMW CIC HIGH (CIC C1A, HmiMain 9283417A)\r\n'
                    'Extract everything to the root of a FAT32 USB stick, add your AA head-unit\r\n'
                    'certificate as AAHU.CRT + AAHU.KEY (PEM), plug it in and restart the CIC.\r\n'
                    'Details: https://github.com/josemalm32/bmw-cic-androidauto\r\n')

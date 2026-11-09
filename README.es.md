@@ -25,7 +25,7 @@ Problemas conocidos: algún corte o congelación breve de imagen cuando el DSP v
 
 ## Compatibilidad
 
-* **Solo CIC HIGH con HmiMain 9283417A** (probado en un E9x). El plugin llama a
+* **Solo CIC HIGH con HmiMain 9283417A, es decir, software del CIC versión C1A** (probado en un E9x). El plugin llama a
   funciones internas de HmiMain por dirección fija; antes de usarlas compara su
   código con firmas. Si tu HmiMain es otro, el plugin no toca nada y muestra
   "HmiMain distinto: no compatible".

@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -171,6 +172,22 @@ def main():
     script = script.replace('\r\n', '\n').encode()
     (usb / 'copie_scr.sh').write_bytes(transform(script))
     print(f'USB stick content ready in {usb}')
+    # Release zip: extract to the root of the stick. Includes the license texts
+    # (libcicaa.so contains mbed TLS, Apache-2.0).
+    rel = out / f'AAPlugin-{ver}-usb.zip'
+    with zipfile.ZipFile(rel, 'w', zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(usb.rglob('*')):
+            if f.is_file():
+                z.write(f, f.relative_to(usb).as_posix())
+        z.write(ROOT / 'LICENSE.md', 'AAPLUGIN-LICENSE.md')
+        z.write(ROOT / 'NOTICE.md', 'AAPLUGIN-NOTICE.md')
+        z.write(mbedtls / 'LICENSE', 'MBEDTLS-LICENSE.txt')
+        z.writestr('AAPLUGIN-INSTALL.txt',
+                   f'AAPlugin {ver} - Android Auto for BMW CIC HIGH (HmiMain 9283417A)\r\n'
+                   'Extract everything to the root of a FAT32 USB stick, add your AA head-unit\r\n'
+                   'certificate as AAHU.CRT + AAHU.KEY (PEM), plug it in and restart the CIC.\r\n'
+                   'Details: https://github.com/josemalm32/bmw-cic-androidauto\r\n')
+    print(f'Release zip: {rel}')
     print('Add AAHU.CRT and AAHU.KEY (your AA head-unit certificate, PEM) to the stick root.')
 
 

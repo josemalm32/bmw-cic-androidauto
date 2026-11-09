@@ -74,6 +74,9 @@ Qué instala:
 * Si encuentra el plugin de desarrollo antiguo (`Plugins/CMD` con
   `CicMenuDemo.so`), lo copia al pendrive (`AALEGACY/`) y lo elimina.
 
+El `AAPlugin-<versión>-usb.zip` de la página de Releases de GitHub contiene lo
+mismo que `usb/`, ya compilado.
+
 Para actualizar, repite el proceso con la versión nueva. Para desinstalar, borra
 `Plugins/AAP` (remontando la flash en escritura) y `/mnt/hbdebug/aap`.
 
@@ -85,6 +88,16 @@ Necesitas, por tu cuenta:
   `ntosh-as`, `ntosh-ld`, `ntosh-strip`) y su `target/qnx6` (libc SH LE, cabeceras).
 * **mbed TLS 3.6.7** (código fuente, Apache-2.0).
 * Python 3.8 o superior.
+
+### Toolchain QNX
+
+* Hace falta **QNX Momentics Development Suite 6.3.x para Windows**, con licencia
+  propia de QNX (BlackBerry QNX). Este proyecto no la incluye ni la distribuye.
+* En la instalación elige los componentes **SDK** y **GPL**, con el destino SH
+  incluido. Por defecto se instala en `C:\QNX630`; si no, indica las rutas con
+  `QNX_HOST` y `QNX_TARGET`.
+* Comprobación: `ntosh-gcc-3.3.5 --version` debe responder `3.3.5 (qnx-nto)` y
+  debe existir `target/qnx6/shle/lib/libc.so.2`.
 
 ```bash
 python tools/build.py

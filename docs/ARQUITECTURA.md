@@ -57,6 +57,11 @@ uno en vuelo cada vez.
 * Audio `M4AC`: las AU AAC del móvil. El DSP solo arranca el reloj con
   «Audio Pipe ES buffer is Full», así que se rellena con AAC en silencio cuando
   el móvil no manda audio. Hay un colchón de ~0,35 s contra las ráfagas del USB.
+* **Modo experimental sin PTS** (`vlead_ms.txt` = `nopts` o `pts-1`). En el DSP,
+  `avSyncShowFrame` (≈0x81f19ad0) compara el PTS del frame con -1: si no tiene, va
+  por «Show Vid no pts» y se muestra al decodificarse, sin comprobar retraso ni
+  descartar («skip frame at output», 0x81f205cc). AA no necesita sincronía A/V.
+  Sin probar en el coche.
 * Si el DSP informa de un error de stream, reenvía la cabecera y espera un IDR.
 
 ## Parche DSP (`src/dspload`)

@@ -10,6 +10,7 @@
 enum { FMT_PCMA = 1, FMT_DVDA = 2, FMT_AAC = 3, FMT_PCMB = 4 };  /* PCMB = PCMA byteswapped (manual only) */
 static const char *fmt_name(int f) { return f == FMT_PCMA ? "PCMA" : f == FMT_DVDA ? "DVDA" : f == FMT_PCMB ? "PCMB" : "M4AC"; }
 static int g_fmt = FMT_AAC;
+static int g_vmode;                /* 0 PTS+vlead, 1 no PTS, 2 PTS -1 (experimental) */
 static uint64_t g_apts;            /* next audio PTS (us, DSP timeline) */
 static unsigned long g_aframes, g_amix_media, g_amix_voice, g_aunder;
 static aring_hdr *g_ar;
@@ -258,7 +259,8 @@ static int live_once(ring_hdr *r, uint32_t vlead)
         else {
             uint32_t pts = (g_clk && h.pts_us > g_clk_us) ? (uint32_t)(h.pts_us - g_clk_us) + vlead : 0;
             if (frames == 0) { if (prop(121, 3, 0) || prop(9, 0, 0x8fa5) || prop(14, 0, 0)) { rc = 1; break; } }
-            else if (prop(121, 3, 0) || prop(14, 0, pts)) { rc = 1; break; }
+            else if (g_vmode == 1 && g_clk) { if (prop(121, 3, 0)) { rc = 1; break; } }          /* free-run: no PTS */
+            else if (prop(121, 3, 0) || prop(14, 0, g_vmode == 2 && g_clk ? 0xffffffffu : pts)) { rc = 1; break; }
             if (data(rbuf + rp + sizeof h, h.len) || pkt_flush()) { rc = 1; break; }
             if (waiting_idr) lg("FIRST IDR sent len=%u", (unsigned)h.len);
             if (!g_clk && !prefilled) {
@@ -296,9 +298,20 @@ static int live(int secs_unused)
 {
     ring_hdr *r; int rc = 1, f, order[4], n = 0, i; uint32_t vlead = AAP_VLEAD_MS * 1000u;
     (void)secs_unused;
-    { FILE *fp = fopen(AAP_VLEAD_TXT, "r"); unsigned v;
-      if (fp) { if (fscanf(fp, "%u", &v) == 1 && v >= 50 && v <= 2000) vlead = v * 1000u; fclose(fp); } }
-    lg("video lead %u ms", (unsigned)(vlead / 1000));
+    /* vlead_ms.txt: a number (50..2000 ms), or EXPERIMENTAL "nopts" / "pts-1":
+     * once the clock runs, video frames carry no PTS (or PTS -1). The DSP then takes
+     * avSyncShowFrame's "Show Vid no pts" path (pts == -1 -> shown as soon as decoded,
+     * never "late"/skipped): lowest latency, no A/V sync (AA does not need it). */
+    { FILE *fp = fopen(AAP_VLEAD_TXT, "r"); char w[16]; unsigned v;
+      if (fp) {
+          if (fscanf(fp, "%15s", w) == 1) {
+              if (!strcmp(w, "nopts")) g_vmode = 1;
+              else if (!strcmp(w, "pts-1")) g_vmode = 2;
+              else if (sscanf(w, "%u", &v) == 1 && v >= 50 && v <= 2000) vlead = v * 1000u;
+          }
+          fclose(fp);
+      } }
+    lg("video lead %u ms mode=%s", (unsigned)(vlead / 1000), g_vmode == 1 ? "nopts" : g_vmode == 2 ? "pts-1" : "pts");
     r = ring_open(); if (!r) { lg("ring open failed errno=%d", errno); return 1; }
     r->reader_pid = (uint32_t)getpid();
     g_ar = aring_open();

@@ -163,6 +163,8 @@ creates them):
   to the full width.
 * `keymap.txt`: lines `cic_key android_key` (e.g. `12 22`).
 * `vlead_ms.txt`: video lead in ms (default 500; higher = fewer freezes, more latency).
+  **Experimental:** `nopts` or `pts-1` sends video without timestamps once the DSP clock
+  runs, so each frame is shown as soon as it is decoded (lowest latency, never skipped).
 
 ## License
 

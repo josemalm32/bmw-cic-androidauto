@@ -81,9 +81,44 @@ DSP (`devctl 0x8004050c`); `dev-dspipc` recarga el firmware desde su ruta. El
 enlace vive en RAM: al reiniciar el CIC vuelve la imagen original.
 
 Otros límites del DSP, que no se tocan (por eso no hay pantalla completa a 1280):
-total de macrobloques ≤ 1620 (área de un PAL), buffers de frames con stride de 720
-y salida de vídeo PAL de 720 px de ancho. Con stride 800 el PAL sale rayado y solo
-se reservan 9 frames. 1280x720 son 3600 macrobloques.
+
+| Dirección C64x | Qué es | Efecto |
+|---|---|---|
+| 0x81952814 | SPS: `mvk 0x654` | total de macrobloques ≤ 1620 (área de un PAL). 800x480 = 1500 cabe; 1280x720 = 3600 no |
+| 0x81f148ac | `mvk 0x2d0,b12` | stride / anchura del pool de frames = 720. Con 800 el PAL sale rayado y solo se reservan 9 frames («ReEstablishVport: MEMORY ALLOCATION ERROR») |
+| — | salida de vídeo | PAL de 720 px de ancho: lo que quede a la derecha de 720 no se ve. Por eso AA dibuja en 640 de ancho (margen 160) |
+
+## Notas de ingeniería inversa del DSP
+
+* **Formato de `dvd_dm642.bin`:** tabla de arranque TI (entrada 0x819de0a0,
+  69 secciones `{tamaño, dirección, datos}`), en palabras de 32 bits big-endian
+  de una memoria little-endian. Para desensamblar: invertir cada palabra y usar
+  capstone `CS_ARCH_TMS320C64X`. Las cadenas se encuentran tras invertir; el código
+  carga sus direcciones con un par `mvk` (16 bits bajos, con signo) + `mvklh`
+  (`-0x7e74` = 0x818c…).
+* **Fourcc** que el código del DSP sí construye (con pares `mvkl`/`mvkh`): audio
+  `M4AC`, `M1A3`, `DTSA`, `DVDA`, `MLP `, `HAAC`, `PCMA`; vídeo `AVC1`, `MP1V`, `MP2V`.
+  `RAWA`/`LPCM` solo existen en el parser MP4 del host. El selector de audio por
+  fourcc está hacia 0x81f1a674 («unsupported audio stream 4cc=%c%c%c%c»). En el
+  coche, PCM (`PCMA`/`DVDA`) fue rechazado; `M4AC` (AAC) funciona.
+* **Sincronía A/V (`avSync*`):** `avSyncStartClock`, `avSyncShowFrame`,
+  `avSyncSetPlaybackSpeed`, `avSyncUpdateClocks`, `avSyncFieldInterrupt`… El
+  reloj arranca con «Audio Pipe ES buffer is Full» → «AVPipeReady» → «StartRefClk»;
+  sin audio se queda en `waitForAudioData` (de ahí el AAC en silencio).
+* **Descartes:** si un frame con PTS llega tarde a la salida, el DSP lo salta
+  («avSync: skip frame at output, id=%d (%d frames to skip)», código hacia
+  0x81f205cc). Son las congelaciones breves cuando la carga llega al 100%.
+* **Frames sin PTS:** `avSyncShowFrame` (≈0x81f19ad0) compara el PTS del frame con
+  -1; si es -1 imprime «Show Vid no pts ref=%d,frm=%d» y lo muestra sin comprobar
+  si llega tarde. Es la base del modo experimental `nopts` / `pts-1` de cicaalive.
+  También existen «SyncOffCount» y «Clk Start No PTS's», sin estudiar todavía.
+* **Mensajes del DSP:** llegan por el canal de comandos dspipc 0x15. cicaalive pone
+  el nivel de depuración 10 (`SetDbgLvl`, comando 0x82) porque necesita los
+  mensajes del arranque del reloj; son unos 11 por segundo y le cuestan ciclos al
+  DSP. Bajarlo tras el arranque es una optimización pendiente.
+* **Carga y retraso** (v57, coche): carga del DSP del 60–100% con AA en marcha.
+  El retraso viene sobre todo de `vlead` (500 ms de margen de PTS), que se
+  necesita mientras el vídeo vaya sincronizado con el reloj del audio.
 
 ## Ficheros y escrituras en el coche
 
@@ -91,6 +126,7 @@ se reservan 9 frames. 1280x720 son 3600 macrobloques.
 |---|---|---|
 | `Plugins/AAP/*` (flash) | instalador | al instalar |
 | `/mnt/hbdebug/aap/*` | instalador | al instalar |
+| `/mnt/hbdebug/aap/geom.txt`, `keymap.txt`, `vlead_ms.txt` | instalador | solo si están en la raíz del pendrive (`default` los borra); sin reinicio |
 | `/mnt/hbdebug/aap/logs.on` | plugin | solo al pulsar Logs |
 | `/mnt/hbdebug/aap/logs/*.log` | plugin, libcicaa, cicaalive | solo con logs ON |
 | `/dev/shmem/aap.stop`, `aap.seed`, anillos `/cicaa_*` | todos | RAM, se pierden al reiniciar |

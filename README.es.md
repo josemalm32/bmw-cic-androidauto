@@ -156,8 +156,10 @@ docs/ARQUITECTURA.md        cómo funciona por dentro
 
 ## Ajustes opcionales
 
-Ficheros de solo lectura que puedes crear a mano en `/mnt/hbdebug/aap/` (el plugin
-nunca los crea):
+Pon cualquiera de estos ficheros en la raíz del pendrive de instalación: el
+instalador los copia a `/mnt/hbdebug/aap/` (sin reiniciar; se usan desde el
+siguiente arranque de AA). Un fichero cuya primera palabra sea `default` borra ese
+ajuste. El plugin nunca los crea.
 
 * `geom.txt`: `sx sy sw sh dx dy dw dh`, recorte del vídeo y rectángulo en
   pantalla. Por defecto `80 80 640 320 160 0 960 480`. Por ejemplo,

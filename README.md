@@ -155,8 +155,9 @@ docs/ARQUITECTURA.md          how it works inside (Spanish)
 
 ## Optional settings
 
-Read-only files you can create by hand in `/mnt/hbdebug/aap/` (the plugin never
-creates them):
+Put any of these files in the root of the install stick: the installer copies them
+to `/mnt/hbdebug/aap/` (no reboot; used from the next AA start). A file whose first
+word is `default` removes that setting. The plugin itself never creates them.
 
 * `geom.txt`: `sx sy sw sh dx dy dw dh`, video crop and on-screen rectangle.
   Default `80 80 640 320 160 0 960 480`; `80 80 640 320 0 0 1280 480` stretches it

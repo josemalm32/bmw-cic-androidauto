@@ -65,6 +65,22 @@ if [ -f "$USB/AAHU.CRT" ] && [ -f "$USB/AAHU.KEY" ]; then
 elif [ ! -f "$DIR/hu.crt" ]; then
  echo "WARNING no AAHU.CRT/AAHU.KEY on the stick and none installed: Android Auto will not connect"
 fi
+# Optional settings from the stick root (geom.txt, keymap.txt, vlead_ms.txt, any
+# letter case). A file whose first word is "default" removes the setting.
+# Settings are read at each AA start: they never trigger a reboot.
+for N in geom keymap vlead_ms; do
+ typeset -u U=$N
+ for S in "$USB/$N.txt" "$USB/$N.TXT" "$USB/$U.TXT"; do
+  [ -f "$S" ] || continue
+  read W < "$S"
+  case "$W" in
+  default*) rm -f "$DIR/$N.txt"; echo "SETTING_REMOVED $N.txt"; break;;
+  esac
+  if "$V" verify "$DIR/$N.txt" "$S"; then echo "SETTING_SAME $N.txt"
+  else cp "$S" "$DIR/$N.txt" && echo "SETTING_INSTALLED $N.txt: $W"; fi
+  break
+ done
+done
 # DSP image: always rebuilt from the car's own copy, installed only if different
 "$V" patch /tmp/aap_dsp.bin || { echo DSP_PATCH_FAILED_UNKNOWN_DSP_IMAGE; flush; exit 83; }
 inst /tmp/aap_dsp.bin "$DIR/dvd_dm642_aa.bin" 644 || { flush; exit 83; }

@@ -1,0 +1,12 @@
+[
+ "dspipc_alloc",
+ "dspipc_closechannel",
+ "dspipc_create",
+ "dspipc_destroy",
+ "dspipc_drain",
+ "dspipc_free",
+ "dspipc_opencommandchannel_prio",
+ "dspipc_openstreamchannel_prio",
+ "dspipc_senddata",
+ "dspipc_sendmessage"
+]

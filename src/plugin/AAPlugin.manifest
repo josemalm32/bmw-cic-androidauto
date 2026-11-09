@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<plugin>
+    <name>AAPlugin</name>
+    <type>App</type>
+    <file>/usr/Hmi/data/ro/Plugins/AAP/AAPlugin.so</file>
+    <config>
+        <autoStart>true</autoStart>
+        <dependencies>
+            <pluginAppConnector>
+                <type>MOST</type>
+                <id>0</id>
+            </pluginAppConnector>
+        </dependencies>
+        <parameters>
+            <DescFile>/usr/Hmi/data/ro/Plugins/AAP/AAPlugin.xml</DescFile>
+        </parameters>
+    </config>
+</plugin>

@@ -1,0 +1,75 @@
+[
+ {
+  "soname": "libCoreFramework.A.so",
+  "path": "libCoreFramework.A.so",
+  "sha256": "a5909229b9c534e8b83c4bfb404c43b2fe52d4063fea8edad2e73d68195394a4",
+  "symbols": [
+   "_ZN3bmw11BasicStringIcEC1EPKc",
+   "_ZN3bmw11BasicStringIcED1Ev",
+   "_ZN3bmw12BufferStreamD1Ev",
+   "_ZN3bmw5ImageC1EPKhj",
+   "_ZNK3bmw11BasicStringItE5c_strEv",
+   "_ZNK3bmw11BasicStringItE6lengthEv",
+   "_ZNK3bmw3MapIjNS_7VariantEE10getAssocAtERKjRj",
+   "_ZNK3bmw7Variant4typeEv"
+  ]
+ },
+ {
+  "soname": "libAppFramework.A.so",
+  "path": "libAppFramework.A.so",
+  "sha256": "2db40cd2cde171d9fb1df78585c0fe363bcae8dddc80a05e2ea075ca0f879ea1",
+  "symbols": [
+   "_ZN3bmw9PluginApp10addHandlerEjRKNS_8DelegateIbRKNS_6ParcelEvvvEE",
+   "_ZN3bmw9PluginApp10addHandlerEjjRKNS_8DelegateIbRKNS_6ParcelEvvvEE",
+   "_ZN3bmw9PluginApp11updateModelEjPKc",
+   "_ZN3bmw9PluginApp11updateModelEjRKNS_11BasicStringItEE",
+   "_ZN3bmw9PluginApp11updateModelEjRKNS_5ImageE",
+   "_ZN3bmw9PluginApp11updateModelEji",
+   "_ZN3bmw9PluginApp12triggerEventEj",
+   "_ZN3bmw9PluginApp17addHandlerWithMapEjRKNS_8DelegateIbRKNS_3MapIjNS_7VariantEEEvvvEE",
+   "_ZN3bmw9PluginApp17addHandlerWithMapEjjRKNS_8DelegateIbRKNS_3MapIjNS_7VariantEEEvvvEE",
+   "_ZN3bmw9PluginApp19cdsGetPropertyAsyncERNS_11BasicStringIcEERKNS_8DelegateIbRKNS1_ItEEvvvEE",
+   "_ZN3bmw9PluginApp33cdsAddPropertyChangedEventHandlerERNS_11BasicStringIcEEjRKNS_8DelegateIbRKNS1_ItEEvvvEE",
+   "_ZN3bmw9PluginAppC1ERNS_11IDispatcherENS_11BasicStringIcEERKNS_6BundleES7_"
+  ]
+ },
+ {
+  "soname": "libecpp-ne.so.4",
+  "path": "libecpp-ne.so.4",
+  "sha256": "f5ddd63cd6819b0b0cfea469c791d3ed193d92d7deb8fce30c6308e42d1c21eb",
+  "symbols": [
+   "_Znwj"
+  ]
+ },
+ {
+  "soname": "libc.so.2",
+  "path": "libc.so.2",
+  "sha256": "37cd08bc4322996713f71204eb4fa031bc55fcebf06aa45a94625700b72519f5",
+  "symbols": [
+   "__get_errno_ptr",
+   "__movstrSI12_i4",
+   "clock_gettime",
+   "close",
+   "devctl",
+   "dlerror",
+   "dlopen",
+   "dlsym",
+   "fsync",
+   "localtime_r",
+   "lseek",
+   "memcpy",
+   "nanosleep",
+   "open",
+   "pthread_create",
+   "pthread_mutex_lock",
+   "pthread_mutex_trylock",
+   "pthread_mutex_unlock",
+   "read",
+   "sleep",
+   "snprintf",
+   "strlen",
+   "time",
+   "write"
+  ]
+ }
+]

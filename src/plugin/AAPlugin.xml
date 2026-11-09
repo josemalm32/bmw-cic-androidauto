@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='utf-8'?>
+<pluginApps>
+  <pluginApp applicationType="Multimedia" applicationWeight="0" text="Android Auto">
+    <actions>
+      <hmiAction id="3" target="10" />
+      <raAction id="181" />
+      <raAction id="185" />
+      <hmiAction id="203" target="210" />
+      <raAction id="211" />
+      <raAction id="204" />
+    </actions>
+    <models>
+      <raDataModel id="182" />
+      <raDataModel id="186" />
+    </models>
+    <hmiStates>
+      <hmiState id="10" text="Android Auto">
+        <components>
+          <button id="11" action="181" text="Conectar Android Auto" />
+          <button id="12" action="185" text="Logs ON/OFF" />
+          <label id="13" text="Estado: " model="182" />
+          <label id="14" text="Logs: " model="186" />
+        </components>
+      </hmiState>
+      <terminalUI id="210" action="211" text="Android Auto">
+        <properties><property id="26" value="2,0,8" /></properties>
+        <components>
+          <label id="212" text="Android Auto" />
+        </components>
+        <toolbarComponents>
+          <button id="217" action="204" text="Volver">
+            <properties><property id="1" value="true" /><property id="22" value="true" /></properties>
+          </button>
+        </toolbarComponents>
+      </terminalUI>
+    </hmiStates>
+    <events>
+      <actionEvent id="202" action="203" />
+      <actionEvent id="206" action="3" />
+    </events>
+  </pluginApp>
+</pluginApps>

@@ -53,7 +53,7 @@ Escritor propio para el DSP, compatible con lo que hace `writer_dm642.so` de BMW
 uno en vuelo cada vez.
 
 * Vídeo `AVC1` (cabecera avcC + frames con prefijo de 4 bytes), PTS = llegada −
-  inicio de reloj + `vlead` (500 ms).
+  inicio de reloj + `vlead` (300 ms).
 * Audio `M4AC`: las AU AAC del móvil. El DSP solo arranca el reloj con
   «Audio Pipe ES buffer is Full», así que se rellena con AAC en silencio cuando
   el móvil no manda audio. Hay un colchón de ~0,35 s contra las ráfagas del USB.
@@ -115,9 +115,10 @@ Otros límites del DSP, que no se tocan (por eso no hay pantalla completa a 1280
 * **Mensajes del DSP:** llegan por el canal de comandos dspipc 0x15. cicaalive pone
   el nivel de depuración 10 (`SetDbgLvl`, comando 0x82) porque necesita los
   mensajes del arranque del reloj; son unos 11 por segundo y le cuestan ciclos al
-  DSP. Bajarlo tras el arranque es una optimización pendiente.
+  DSP. Desde 1.0.1 se baja a nivel 1 un segundo después de arrancar el reloj
+  (cada sesión nueva vuelve a abrir con 10). Sin probar en el coche.
 * **Carga y retraso** (v57, coche): carga del DSP del 60–100% con AA en marcha.
-  El retraso viene sobre todo de `vlead` (500 ms de margen de PTS), que se
+  El retraso viene sobre todo de `vlead` (300 ms de margen de PTS), que se
   necesita mientras el vídeo vaya sincronizado con el reloj del audio.
 
 ## Ficheros y escrituras en el coche

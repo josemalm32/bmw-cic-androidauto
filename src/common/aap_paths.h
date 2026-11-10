@@ -23,5 +23,5 @@
 #define AAP_MARGIN_W  160
 #define AAP_MARGIN_H  160
 #define AAP_GEOM      {80, 80, 640, 320, 160, 0, 960, 480}
-#define AAP_VLEAD_MS  500
+#define AAP_VLEAD_MS  300
 #endif

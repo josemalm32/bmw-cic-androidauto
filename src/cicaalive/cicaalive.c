@@ -47,6 +47,7 @@ int dspipc_drain(void *ch);
 #define ENT_MAX 123
 
 static FILE *g_log; static struct timespec g_t0;
+static unsigned g_dbglvl = 10;      /* DSP debug level at session start (vlead_ms.txt "dbg100" -> 100) */
 static void lg(const char *f, ...)
 {
     struct timespec t; va_list a; double s;
@@ -162,7 +163,7 @@ static int cmd_u32(const char *name, unsigned id, uint32_t v) { return send_cmd(
 
 static int dsp_open(void)
 {
-    int rc; unsigned char lvl[4] = {10, 0, 0, 0};
+    int rc; unsigned char lvl[4] = {(unsigned char)g_dbglvl, 0, 0, 0};
     rc = dspipc_create("/dev/dspipc/dm642.0/", &d.h); lg("dspipc_create rc=%d h=%p", rc, d.h); if (rc) return -1;
     rc = dspipc_alloc(d.h, 0x840c, &d.mem); lg("dspipc_alloc rc=%d ptr=%p id=%d", rc, (void *)d.mem.ptr, d.mem.id); if (rc) return -1;
     d.have_mem = 1; memset(d.mem.ptr, 0xff, 0x840c);

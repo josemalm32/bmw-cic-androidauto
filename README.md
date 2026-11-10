@@ -163,7 +163,7 @@ word is `default` removes that setting. The plugin itself never creates them.
   Default `80 80 640 320 160 0 960 480`; `80 80 640 320 0 0 1280 480` stretches it
   to the full width.
 * `keymap.txt`: lines `cic_key android_key` (e.g. `12 22`).
-* `vlead_ms.txt`: video lead in ms (default 500; higher = fewer freezes, more latency).
+* `vlead_ms.txt`: video lead in ms (default 300; higher = fewer freezes, more latency).
   **Experimental:** `nopts` or `pts-1` sends video without timestamps once the DSP clock
   runs, so each frame is shown as soon as it is decoded (lowest latency, never skipped).
 

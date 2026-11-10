@@ -165,7 +165,7 @@ ajuste. El plugin nunca los crea.
   pantalla. Por defecto `80 80 640 320 160 0 960 480`. Por ejemplo,
   `80 80 640 320 0 0 1280 480` lo estira a todo el ancho.
 * `keymap.txt`: líneas `tecla_cic tecla_android` (p. ej. `12 22`).
-* `vlead_ms.txt`: margen de vídeo en ms (por defecto 500; más alto, menos cortes
+* `vlead_ms.txt`: margen de vídeo en ms (por defecto 300; más alto, menos cortes
   y más retraso). **Experimental:** `nopts` o `pts-1` manda el vídeo sin marca de
   tiempo cuando el reloj del DSP ya corre: cada frame se muestra en cuanto se
   decodifica (mínimo retraso, nunca se descarta).

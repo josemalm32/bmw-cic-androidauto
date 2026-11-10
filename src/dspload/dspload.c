@@ -88,11 +88,13 @@ static int patch(const char *out)
         if (w != kPatch[i].old_w) { printf("PATCH unknown DSP image (0x%lx = 0x%08x)\n", kPatch[i].off, w); free(img); return 1; }
         put_be32(img + kPatch[i].off, kPatch[i].new_w);
     }
-    snprintf(tmp, sizeof tmp, "%s.new", out);
-    fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0 || write(fd, img, n) != n) { printf("PATCH write %s failed err=%d\n", tmp, errno); if (fd >= 0) close(fd); free(img); return 1; }
+    /* Written in place: /tmp on the CIC is shmem, where rename() fails with
+       EXDEV (err=18). The installer verifies and atomically installs the result. */
+    (void)tmp;
+    unlink(out);
+    fd = open(out, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0 || write(fd, img, n) != n) { printf("PATCH write %s failed err=%d\n", out, errno); if (fd >= 0) close(fd); unlink(out); free(img); return 1; }
     fsync(fd); close(fd); free(img);
-    if (rename(tmp, out)) { printf("PATCH rename failed err=%d\n", errno); return 1; }
     printf("PATCH_OK %s\n", out);
     return 0;
 }

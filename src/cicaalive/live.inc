@@ -200,7 +200,7 @@ static ring_hdr *ring_open(void)
 /* one DSP session with format g_fmt. 0 normal end, 1 error, 2 audio format refused (try next) */
 static int live_once(ring_hdr *r, uint32_t vlead)
 {
-    uint32_t cfg_gen = 0; int have_hdr = 0, waiting_idr = 1, rc = 0, prefilled = 0;
+    uint32_t cfg_gen = 0; int have_hdr = 0, waiting_idr = 1, rc = 0, prefilled = 0, dbg_low = 0;
     uint64_t alead = 300000u, last_idr_req = 0, last_stat = 0; unsigned long frames = 0, bytes = 0, skipped = 0;
     unsigned char *rbuf = (unsigned char *)(r + 1);
     pid_t parent = getppid();
@@ -220,6 +220,21 @@ static int live_once(ring_hdr *r, uint32_t vlead)
         if (g_resync) {                    /* v53: EVT_STREAM_ERROR (video, non fatal) -> resend header, wait IDR */
             g_resync = 0; cfg_gen = 0; waiting_idr = 1; r->want_idr = 1; last_idr_req = now;
             lg("STREAM ERROR -> resync: header + wait IDR (errors=%d)", d.errors);
+        }
+        /* 1.0.1: debug level 10 is only needed to see the clock start (~11 msgs/s cost
+           DSP cycles). 1 s after the clock runs, drop it to 1 (events/errors still arrive
+           as 0xe7 messages). Each new session re-opens the DSP at level 10.
+           1.0.2: with logs ON (g_log open) the level stays at 10 for full diagnostics. */
+        if (!g_log && g_clk && !dbg_low && now - g_clk_us > 1000000u) {
+            unsigned char lvl[4] = {1, 0, 0, 0};
+            dbg_low = 1; send_cmd("SetDbgLvl(low)", 0x82, lvl, 4);
+        }
+        /* 1.0.3 diagnostic "dbg100": level 100 shows the DSP's per-frame PTS math
+           ("Property video 45k pts", "Vid Late ... ref,a,v"). It floods, so only for
+           the first 8 s of the clock, then back to 10. */
+        if (g_log && g_dbglvl > 10 && g_clk && !dbg_low && now - g_clk_us > 8000000u) {
+            unsigned char lvl[4] = {10, 0, 0, 0};
+            dbg_low = 1; send_cmd("SetDbgLvl(10)", 0x82, lvl, 4);
         }
         if (g_clk && prefilled) {          /* audio at real-time rate, lead alead */
             int na = 0;
@@ -298,20 +313,25 @@ static int live(int secs_unused)
 {
     ring_hdr *r; int rc = 1, f, order[4], n = 0, i; uint32_t vlead = AAP_VLEAD_MS * 1000u;
     (void)secs_unused;
-    /* vlead_ms.txt: a number (50..2000 ms), or EXPERIMENTAL "nopts" / "pts-1":
+    /* vlead_ms.txt: a number (50..2000 ms), or EXPERIMENTAL "nopts" / "pts-1";
+     * optional 2nd word "dbg100" (diagnostic, logs ON only matters).
+     * NOTE (car 2026-11-10): nopts -> frames skipped at output, pts-1 -> frames held
+     * (prop 14 takes microseconds, DSP does /1000*45, so 0xffffffff is far future).
      * once the clock runs, video frames carry no PTS (or PTS -1). The DSP then takes
      * avSyncShowFrame's "Show Vid no pts" path (pts == -1 -> shown as soon as decoded,
      * never "late"/skipped): lowest latency, no A/V sync (AA does not need it). */
     { FILE *fp = fopen(AAP_VLEAD_TXT, "r"); char w[16]; unsigned v;
       if (fp) {
           if (fscanf(fp, "%15s", w) == 1) {
+              char w2[16];
               if (!strcmp(w, "nopts")) g_vmode = 1;
               else if (!strcmp(w, "pts-1")) g_vmode = 2;
               else if (sscanf(w, "%u", &v) == 1 && v >= 50 && v <= 2000) vlead = v * 1000u;
+              if (fscanf(fp, "%15s", w2) == 1 && !strcmp(w2, "dbg100")) g_dbglvl = 100;
           }
           fclose(fp);
       } }
-    lg("video lead %u ms mode=%s", (unsigned)(vlead / 1000), g_vmode == 1 ? "nopts" : g_vmode == 2 ? "pts-1" : "pts");
+    lg("video lead %u ms dsp_dbg=%u mode=%s", (unsigned)(vlead / 1000), g_dbglvl, g_vmode == 1 ? "nopts" : g_vmode == 2 ? "pts-1" : "pts");
     r = ring_open(); if (!r) { lg("ring open failed errno=%d", errno); return 1; }
     r->reader_pid = (uint32_t)getpid();
     g_ar = aring_open();

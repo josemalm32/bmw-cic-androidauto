@@ -205,6 +205,14 @@ def main():
     script = (ROOT / 'installer/copie_scr.plain.sh').read_text().replace('@VERSION@', ver)
     script = script.replace('\r\n', '\n').encode()
     (usb / 'copie_scr.sh').write_bytes(transform(script))
+    # Optional: certs/*.crt + certs/*.key (private, git-ignored) go to the stick root as AAHU.CRT/AAHU.KEY.
+    crt = sorted((ROOT / 'certs').glob('*.[cC][rR][tT]'))
+    key = sorted((ROOT / 'certs').glob('*.[kK][eE][yY]'))
+    have_certs = bool(crt and key)
+    if have_certs:
+        shutil.copyfile(crt[0], usb / 'AAHU.CRT')
+        shutil.copyfile(key[0], usb / 'AAHU.KEY')
+        print(f'  certs: {crt[0].name} + {key[0].name} -> AAHU.CRT/AAHU.KEY')
     print(f'USB stick content ready in {usb}')
     # Release zip: extract to the root of the stick. Includes the license texts
     # (libcicaa.so contains mbed TLS, Apache-2.0).
@@ -222,7 +230,10 @@ def main():
                    'certificate as AAHU.CRT + AAHU.KEY (PEM), plug it in and restart the CIC.\r\n'
                    'Details: https://github.com/josemalm32/bmw-cic-androidauto\r\n')
     print(f'Release zip: {rel}')
-    print('Add AAHU.CRT and AAHU.KEY (your AA head-unit certificate, PEM) to the stick root.')
+    if have_certs:
+        print('Certificate included in the zip (private: do not publish this zip).')
+    else:
+        print('Add AAHU.CRT and AAHU.KEY (your AA head-unit certificate, PEM) to the stick root.')
 
 
 if __name__ == '__main__':

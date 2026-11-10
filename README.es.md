@@ -138,6 +138,15 @@ El resultado queda en `out/usb/` (listo para el pendrive), en
 `libdspipc`...) no hacen falta: `build.py` genera stubs solo para enlazar, a partir
 de las listas de símbolos de `tools/`.
 
+#### Incluir tu certificado en la compilación
+
+Si la carpeta `certs/` (créala junto a `tools/`) contiene un `*.crt` y un `*.key`
+(PEM), `build.py` los copia a la raíz del pendrive como `AAHU.CRT` / `AAHU.KEY`, así
+que tanto `out/usb/` como el zip quedan listos sin pasos manuales. Si falta alguno,
+la compilación funciona igual y solo te recuerda añadirlos a mano. `certs/` está en
+`.gitignore` y nunca se sube, pero **un zip compilado así contiene tu clave
+privada: no lo publiques** (por ejemplo como release de GitHub).
+
 ## Estructura
 
 ```
@@ -169,6 +178,12 @@ ajuste. El plugin nunca los crea.
   y más retraso). **Experimental:** `nopts` o `pts-1` manda el vídeo sin marca de
   tiempo cuando el reloj del DSP ya corre: cada frame se muestra en cuanto se
   decodifica (mínimo retraso, nunca se descarta).
+  Ajuste según pruebas en el coche: 150 ms se entalla más (el DSP descarta frames,
+  `avSync: skip frame`, sobre todo en frames grandes cuando su carga llega al 100 %);
+  500 ms es más fluido pero con más retraso; 300 ms es el compromiso por defecto.
+  Prueba entre 250 y 400 con tu móvil. Una segunda palabra opcional `dbg100`
+  (p. ej. `300 dbg100`) sube el nivel de depuración del DSP a 100 durante los
+  primeros 8 s del reloj (solo diagnóstico, con los logs activados).
 
 ## Licencia
 

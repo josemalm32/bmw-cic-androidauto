@@ -2,4 +2,4 @@ out/
 __pycache__/
 *.o
 *.stackdump
-certs/
+

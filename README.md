@@ -137,6 +137,15 @@ The result is `out/usb/` (ready for the stick), `out/AAPlugin-<version>-usb.zip`
 The car's libraries (`libCoreFramework`, `libAppFramework`, `libdspipc`...) are not
 needed: `build.py` generates link-only stubs from the symbol lists in `tools/`.
 
+#### Including your certificate in the build
+
+If the `certs/` folder (create it next to `tools/`) contains one `*.crt` and one
+`*.key` (PEM), `build.py` copies them to the stick root as `AAHU.CRT` / `AAHU.KEY`,
+so both `out/usb/` and the zip are ready to use with no manual step. If either is
+missing the build still works and just reminds you to add them by hand.
+`certs/` is in `.gitignore` and is never pushed, but **a zip built this way contains
+your private key: do not publish it** (for example as a GitHub release).
+
 ## Layout
 
 ```
@@ -166,6 +175,11 @@ word is `default` removes that setting. The plugin itself never creates them.
 * `vlead_ms.txt`: video lead in ms (default 300; higher = fewer freezes, more latency).
   **Experimental:** `nopts` or `pts-1` sends video without timestamps once the DSP clock
   runs, so each frame is shown as soon as it is decoded (lowest latency, never skipped).
+  Tuning from car tests: 150 ms stalls more (the DSP drops frames, `avSync: skip frame`,
+  mostly on large frames when its load hits 100 %); 500 ms is smoother but laggier;
+  300 ms is the default compromise. Try 250-400 for your phone.
+  An optional second word `dbg100` (e.g. `300 dbg100`) raises the DSP debug level to
+  100 for the first 8 s of the clock (diagnostics only, needs logs ON).
 
 ## License
 

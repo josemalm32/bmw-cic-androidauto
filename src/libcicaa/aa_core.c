@@ -227,6 +227,15 @@ int cicaa_input(int kind, int code, int value)
     pthread_mutex_unlock(&g_inmu);
     return ok ? 0 : -1;
 }
+/* Other backends (ccpa_core.c) drain the same plugin input queue: 1 = got one. */
+int cicaa_input_pop(int *kind, int *code, int *value)
+{
+    int ok = 0;
+    pthread_mutex_lock(&g_inmu);
+    if (g_inr != g_inw) { unsigned i = g_inr++ % 32; *kind = g_inq[i].kind; *code = g_inq[i].code; *value = g_inq[i].val; ok = 1; }
+    pthread_mutex_unlock(&g_inmu);
+    return ok;
+}
 int cicaa_projection(void) { return g_proj; }
 void cicaa_project(void) { g_proj_req = 1; }
 static void pb_s32(pb_t *p, int f, int v)          /* int32 varint, negative = 10 bytes */

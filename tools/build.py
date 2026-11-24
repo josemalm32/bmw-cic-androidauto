@@ -116,7 +116,7 @@ def build_libcicaa(t, b, mbedtls):
     patched = patched_sources(b, mbedtls)
     srcs = [patched.get(f.name, f) for f in sorted((mbedtls / 'library').glob('*.c'))
             if f.name not in ('net_sockets.c', 'timing.c')]
-    srcs += [SRC / 'libcicaa' / (n + '.c') for n in ('aa_core', 'aa_usb_qnx', 'cicaa', 'aa_video', 'aa_video_native')]
+    srcs += [SRC / 'libcicaa' / (n + '.c') for n in ('aa_core', 'aa_usb_qnx', 'ccpa_core', 'cicaa', 'aa_video', 'aa_video_native')]
     objs = []
     for f in srcs:
         o = obj / (f.stem + '.o')

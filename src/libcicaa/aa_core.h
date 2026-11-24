@@ -33,4 +33,7 @@ typedef struct aa_pki {
 int aa_session(aa_transport_t *t, const aa_pki_t *pki, aa_log_fn lg, aa_status_fn st,
                char *summary, size_t summary_len);
 
+/* Pops one queued plugin input event (cicaa_input); 1 = got one. For other backends. */
+int cicaa_input_pop(int *kind, int *code, int *value);
+
 #endif

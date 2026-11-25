@@ -173,7 +173,9 @@ struct UiGuard {
     UiGuard() : locked(0) { if (g_ui_ready && pthread_self() != g_hmi_tid) { pthread_mutex_lock(g_ui_mtx); locked = 1; } }
     ~UiGuard() { if (locked) pthread_mutex_unlock(g_ui_mtx); }
 };
-static inline void ui(bmw::PluginApp* a, unsigned m, const char* v) { UiGuard g; a->updateModel(m, v ? v : ""); }
+#include "aap_i18n.h"
+/* Every model text goes out translated (English texts are the keys, see aap_i18n.h). */
+static inline void ui(bmw::PluginApp* a, unsigned m, const char* v) { UiGuard g; v = tr(v); a->updateModel(m, v ? v : ""); }
 static int spawn(void* (*fn)(void*)) {
     int tid = 0; int rc = pthread_create(&tid, 0, fn, 0);
     if (rc == 0) pthread_detach(tid);
@@ -374,6 +376,24 @@ static int iba_signatures() {
     }
     if (g_logs) { char b[112]; unsigned n = put_str(b, 0, "HmiMain profile "); n = put_str(b, n, pr->name); b[n] = 0; alog(b); }
     return 1;
+}
+/* HMI thread: (re)read the CIC language so the next texts follow it. Only after a
+ * HmiMain profile matched, and only on a build whose addresses for the MMI proxy are
+ * known (E9x, or a profile that translates 0x08be9fb0); otherwise English stays. */
+static void lang_refresh() {
+    if (pthread_self() != g_hmi_tid || !iba_profile_select()) return;
+    if (g_iba_profile != &kIbaProfiles[0] && iba_a(0x08be9fb0UL) == 0x08be9fb0UL) return;
+    typedef void* (*MmiFactory)(unsigned);
+    typedef int (*GetLanguage)(void*, int*);
+    void* mmi = ((MmiFactory)iba_a(0x08be9fb0UL))(1);
+    if (!mmi) return;
+    void* prop = iba_off(mmi, 0x750);
+    unsigned long vp = *(unsigned long*)prop;   /* CCurrentLanguage or its property bases */
+    if (vp != iba_a(0x09213980UL) && vp != iba_a(0x09231840UL) && vp != iba_a(0x09231814UL)) { alog("CIC language: unexpected property"); return; }
+    int raw = 0;
+    if (!((GetLanguage)iba_a(0x08bea500UL))(prop, &raw)) return;   /* not valid yet */
+    if (raw != g_lang_raw) { g_lang_raw = raw; alog_val("CIC language", raw); }
+    g_lang = aap_lang_from_cic(raw);
 }
 static int iba_list(void* proxy, unsigned offset, void* cb, int property = 0) {
     typedef int (*AddListener)(void*, void*, void*, unsigned);
@@ -967,10 +987,11 @@ static int live_video_ready() {
     return g_ring[7] > 0;
 }
 static void status_show(bmw::PluginApp* app, const char* aa) {
-    char line[200], v[160];
+    char line[400], v[160];
     pthread_mutex_lock(g_auto_mtx); copy_str(v, g_auto_text, sizeof v); pthread_mutex_unlock(g_auto_mtx);
-    unsigned n = put_str(line, 0, aa ? aa : "");
-    if (v[0] && !str_eq(v, "Player started.")) { n = put_str(line, n, " | "); n = put_str(line, n, v); }
+    char stage[160];
+    unsigned n = put_str(line, 0, aa ? tr_stage(aa, stage, sizeof stage) : "");
+    if (v[0] && !str_eq(v, "Player started.")) { n = put_str(line, n, " | "); n = put_str(line, n, tr(v)); }
     line[n] = 0;
     ui(app, MODEL_STATUS, line);
 }
@@ -1048,9 +1069,10 @@ static bool onConnect(void* obj, const bmw::Parcel&) {
 static void status_line(bmw::PluginApp* app) {
     static const char* const kMode[3] = {"Normal", "Fullscreen", "Stretched"};
     g_iba_keep_audio = file_exists(AAP_AAUDIO_ON);
-    char b[96]; unsigned n = put_str(b, 0, "Screen: ");
-    n = put_str(b, n, kMode[screen_mode()]);
-    if (g_logs) n = put_str(b, n, " | Logs ON");
+    lang_refresh();
+    char b[128]; unsigned n = put_str(b, 0, tr("Screen: "));
+    n = put_str(b, n, tr(kMode[screen_mode()]));
+    if (g_logs) n = put_str(b, n, tr(" | Logs ON"));
     else n = put_str(b, n, g_iba_keep_audio ? " | AA Audio" : " | BT Audio");
     b[n] = 0;
     ui(app, MODEL_SCREEN, b);

@@ -55,6 +55,13 @@ En **Multimedia → Android Auto** aparece una pantalla con:
   copian al USB (`AALOGS/`) y se borran del CIC.
 * **Estado**: línea con lo que está pasando.
 
+Los textos de estado siguen el idioma configurado en el CIC (se lee del HMI al abrir
+la página y en cada pulsación): inglés, español, alemán, francés, italiano,
+neerlandés y portugués; cualquier otro idioma usa inglés. Las etiquetas de los
+botones (fijas en el XML) quedan en inglés. Detectar el idioma requiere las
+direcciones del proxy MMI de esa versión de HmiMain: conocidas para E9x (9283417A);
+en otros perfiles los textos quedan en inglés hasta añadirlas.
+
 ## Instalación
 
 1. Compila (ver abajo) o descarga una release; obtendrás una carpeta `usb/`.

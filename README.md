@@ -53,6 +53,13 @@ Known issues: occasional short audio cuts or video freezes when the DSP is at 10
   (`AALOGS/`) and deleted from the CIC.
 * **Estado** (status): one line describing what is happening.
 
+Status texts follow the language set on the CIC (read from the HMI when the page
+opens and on every button press): English, Spanish, German, French, Italian, Dutch
+and Portuguese; any other language uses English. Button labels (fixed in the XML)
+stay in English. Language detection needs the MMI proxy addresses of the HmiMain
+build: known for E9x (9283417A); on other profiles the texts stay in English until
+those addresses are added.
+
 ## Installation
 
 1. Build it (see below) or download a release; you get a `usb/` folder.

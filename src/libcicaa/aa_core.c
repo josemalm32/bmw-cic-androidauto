@@ -189,9 +189,11 @@ static int read_msg(aa_t *a, int timeout_ms)
         }
         if (waited >= timeout_ms) return 0;
         {
-            int r = a->t->recv(a->t->ctx, a->rx + a->rxn, (int)(sizeof a->rx - a->rxn), 100);
+            /* in slices of at most 100 ms, and never longer than the caller asked for */
+            int slice = timeout_ms - waited < 100 ? timeout_ms - waited : 100;
+            int r = a->t->recv(a->t->ctx, a->rx + a->rxn, (int)(sizeof a->rx - a->rxn), slice);
             if (r < 0) { a->lg("AA transport recv error %d", r); return -1; }
-            if (r == 0) waited += 100; else a->rxn += (size_t)r;
+            if (r == 0) waited += slice; else a->rxn += (size_t)r;
         }
     }
 }
@@ -229,6 +231,11 @@ int cicaa_input(int kind, int code, int value)
 }
 int cicaa_projection(void) { return g_proj; }
 void cicaa_project(void) { g_proj_req = 1; }
+/* Microphone / AA voice (aa_mic.h). The plugin calls cicaa_mic_hold(1) when the AA picture
+ * is shown and (0) when it is gone, and polls cicaa_speech_want(): 1 = audio connection 0x31
+ * (car microphone + speech output) is needed now; it requests/releases 0x31 on the HMI thread. */
+void cicaa_mic_hold(int on) { mic_hold(on); }
+int cicaa_speech_want(void) { return g_speech_want; }
 static void pb_s32(pb_t *p, int f, int v)          /* int32 varint, negative = 10 bytes */
 {
     unsigned long lo = (unsigned long)v; int i;
@@ -262,11 +269,17 @@ static int read_small(const char *path, char *b, int size)
  * geom.txt "100 128 600 224 0 0 1280 480".
  * Margins above 600 x 320 (UI smaller than 200 x 160) or dpi outside 60..400 are
  * ignored and the defaults kept. Returns 1 when video.txt set the margins. */
+static int g_video_topleft;
 static int video_cfg(unsigned *mw, unsigned *mh, unsigned *dpi)
 {
     char b[64]; unsigned v[3]; int k = 0; const char *p = b;
-    *mw = AAP_MARGIN_W; *mh = AAP_MARGIN_H; *dpi = AAP_DPI;
+    *mw = AAP_MARGIN_W; *mh = AAP_MARGIN_H; *dpi = AAP_DPI; g_video_topleft = 1;
     if (!read_small(AAP_VIDEO_TXT, b, sizeof b)) return 0;
+    /* optional 4th word "topleft": keep the UI area in the top-left corner (ui_config) as
+       with the built-in margins. The DSP shows only the left 720 columns of the 800x480
+       stream, so a centred area can be at most ~600 px wide, a top-left one 720 px:
+       "80 210 116 topleft" + geom.txt "0 0 720 270 0 0 1280 480" = full screen, 8:3. */
+    g_video_topleft = strstr(b, "top") != 0;
     while (*p && k < 3) {
         while (*p && (*p < '0' || *p > '9')) ++p;
         if (!*p) break;
@@ -321,9 +334,9 @@ static int send_sd_response(aa_t *a)
     pb_u(&cfg, 1, 1); pb_u(&cfg, 2, 2); pb_u(&cfg, 3, mw); pb_u(&cfg, 4, mh); pb_u(&cfg, 5, dpi);
     /* VideoConfiguration field 11 ui_config { 1 margins { 2 bottom, 4 right } }: AA puts
        its UI area in the top-left corner instead of centring it. */
-    if (!vfile) {
+    if (!vfile || g_video_topleft) {
         pb_t ins, ui; memset(&ins, 0, sizeof ins); memset(&ui, 0, sizeof ui);
-        pb_u(&ins, 2, AAP_UI_MARGIN_BOTTOM); pb_u(&ins, 4, AAP_UI_MARGIN_RIGHT);
+        pb_u(&ins, 2, vfile ? mh : AAP_UI_MARGIN_BOTTOM); pb_u(&ins, 4, vfile ? mw : AAP_UI_MARGIN_RIGHT);
         pb_msg(&ui, 1, &ins); pb_msg(&cfg, 11, &ui);
     }
     pb_u(&sub, 1, 3 /* VIDEO */); pb_msg(&sub, 4, &cfg); pb_u(&sub, 5, 1);
@@ -352,7 +365,7 @@ static int send_sd_response(aa_t *a)
         a->lg("AA SERVICE_DISCOVERY_RESPONSE send failed");return -1;
     }
     a->lg("AA tx SERVICE_DISCOVERY_RESPONSE %u bytes (input/sensor/video + %s%sspeech/system + mic descriptor; capture unavailable)", (unsigned)sd.n, g_usb_media ? (g_aac ? "AAC-LC media(v56)/" : "PCM media/") : "", "PCM ");
-    a->lg("AA video margins %u x %u (UI %u x %u), dpi %u, driver %s, %s", mw, mh, 800 - mw, 480 - mh, dpi, rhd ? "right" : "left", vfile ? "video.txt (centred)" : "built-in (top-left)");
+    a->lg("AA video margins %u x %u (UI %u x %u), dpi %u, driver %s, %s", mw, mh, 800 - mw, 480 - mh, dpi, rhd ? "right" : "left", vfile ? (g_video_topleft ? "video.txt (top-left)" : "video.txt (centred)") : "built-in (top-left)");
     a->lg("V17 BT1 media %s", g_usb_media ? "over USB ch4 -> DSP (default v54)" : "NOT announced (BT Audio mode): phone uses Bluetooth A2DP");
     return 0;
 }
@@ -416,6 +429,7 @@ static int on_video(aa_t *a, int id, const unsigned char *p, size_t n)
  *  6 RelativeEvent{1 Rel{1 keycode, 2 delta}}}. Also projection re-request. */
 static void input_drain(aa_t *a)
 {
+    mic_poll(a);                     /* car microphone -> channel 7 while the phone listens */
     for (;;) {
         int kind, code, val; pb_t ev, outer, item; unsigned long long ts;
         pthread_mutex_lock(&g_inmu);
@@ -711,13 +725,15 @@ int aa_session(aa_transport_t *t, const aa_pki_t *pki, aa_log_fn lg, aa_status_f
     else if (a->cfd >= 0) { close(a->cfd); a->cfd = -1; }
     st("AA: session active");
 
-    /* 4.. main loop: up to 10 min or 60 s of silence */
+    /* 4.. main loop: up to 10 min or 60 s of silence. read_msg() waits at most 20 ms, so
+       iDrive input queued while the phone sends nothing (static screen) leaves after
+       <= 20 ms instead of <= 100 ms; 3000 empty passes are still 60 s. */
     g_proj = 1; g_proj_req = 0;
-    for (i = 0; idle < 600; ++i) {
+    for (i = 0; idle < 3000; ++i) {
         int r;
         if (av_failed()) { snprintf(summary,sn,"V13 video backend failure (see log)"); break; }
         input_drain(a);
-        r = read_msg(a, 100);
+        r = read_msg(a, 20);
         if (r == 0) { ++idle; continue; }
         if (r < 0) { lg("AA session read rc=%d", r); break; }
         idle = 0;

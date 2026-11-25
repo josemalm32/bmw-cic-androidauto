@@ -18,6 +18,10 @@
 #define AOA_PID_ACC 0x2d00
 #define AOA_PID_ACC_ADB 0x2d01
 #define APPLE_VID 0x05ac
+/* Carlinkit CPC200-CCPA ("Autokit") CarPlay/AA dongle: vendor bulk interface 0 */
+#define CCPA_VID 0x1314
+#define CCPA_PID_A 0x1520
+#define CCPA_PID_B 0x1521
 
 #define MAXDEV 32
 static usbd_device_instance_t g_inst[MAXDEV];
@@ -93,6 +97,7 @@ static struct usbd_pipe *open_ctl(struct usbd_device *dev)
     return p;
 }
 
+/* mode 0 = Android phone candidate, 1 = AOA accessory, 2 = CCPA dongle */
 static int find_inst(int vid_acc_only, usbd_device_instance_t *out)
 {
     int i, found = 0;
@@ -100,11 +105,13 @@ static int find_inst(int vid_acc_only, usbd_device_instance_t *out)
     for (i = 0; i < g_ninst && !found; ++i) {
         usbd_device_instance_t *d = &g_inst[i];
         unsigned v = d->ident.vendor, p = d->ident.device, c = d->ident.dclass;
-        if (vid_acc_only) {
+        if (vid_acc_only == 2) {
+            if (v == CCPA_VID && (p == CCPA_PID_A || p == CCPA_PID_B) && d->iface == 0) { *out = *d; found = 1; }
+        } else if (vid_acc_only) {
             if (v == GOOGLE_VID && (p == AOA_PID_ACC || p == AOA_PID_ACC_ADB) && d->iface == 0) { *out = *d; found = 1; }
         } else {
             /* phone candidates: not Apple, not hub/mass storage/HID/audio; MTP/PTP(6), vendor(ff), misc(0) */
-            if (v != APPLE_VID && c != 0x09 && c != 0x08 && c != 0x03 && c != 0x01 &&
+            if (v != APPLE_VID && v != CCPA_VID && c != 0x09 && c != 0x08 && c != 0x03 && c != 0x01 &&
                 (c == 0x06 || c == 0xff || c == 0x00 || c == 0xef) && d->iface == 0) { *out = *d; found = 1; }
         }
     }
@@ -247,6 +254,11 @@ static int t_recv(void *ctx, unsigned char *b, int n, int timeout_ms)
 
 int aa_usb_open(aa_log_fn lg, aa_status_fn st, int wait_s, aa_transport_t *t)
 {
+    return aa_usb_open2(lg, st, wait_s, 0, t);
+}
+
+int aa_usb_open2(aa_log_fn lg, aa_status_fn st, int wait_s, int want_ccpa, aa_transport_t *t)
+{
     usbd_funcs_t funcs = {_USBDI_NFUNCS, ins, rem, 0};
     usbd_device_ident_t any = {USBD_CONNECT_WILDCARD, USBD_CONNECT_WILDCARD, USBD_CONNECT_WILDCARD,
                                USBD_CONNECT_WILDCARD, USBD_CONNECT_WILDCARD};
@@ -266,6 +278,16 @@ int aa_usb_open(aa_log_fn lg, aa_status_fn st, int wait_s, aa_transport_t *t)
         lg("USB hcd ctrl=%.8s caps=0x%x ndev=%d", hi.controller, (unsigned)hi.capabilities, hi.ndev);
     sleep(2);   /* let existing devices be reported */
     for (s = 0; s < wait_s; ++s) {
+        if (want_ccpa && find_inst(2, &in)) {
+            lg("CCPA dongle present vid=%04x pid=%04x", (unsigned)in.ident.vendor, (unsigned)in.ident.device);
+            st("CarPlay dongle detected");
+            sleep(1);
+            if (open_accessory(&in) == 0) {
+                t->ctx = 0; t->send = t_send; t->recv = t_recv;
+                return 1;
+            }
+            return -3;
+        }
         if (find_inst(1, &in)) {
             if (!switched) {
                 /* Already in accessory mode before we switched it: left over from the previous

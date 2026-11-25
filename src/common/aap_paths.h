@@ -4,7 +4,7 @@
  * the plugin's buttons (zoom.on / wide.on, later aaaudio.on). */
 #ifndef AAP_PATHS_H
 #define AAP_PATHS_H
-#define AAP_VERSION   "1.1.0"
+#define AAP_VERSION   "1.2.0-ccpa"
 #define AAP_DIR       "/mnt/hbdebug/aap"            /* HDD: binaries + certificate (installer) */
 #define AAP_LOGS_ON   AAP_DIR "/logs.on"            /* exists = logging enabled */
 #define AAP_LOGDIR    AAP_DIR "/logs"               /* log files (only when enabled) */
@@ -52,5 +52,10 @@
 #define AAP_GEOM_TXT  AAP_DIR "/geom.txt"           /* "sx sy sw sh dx dy dw dh": overrides the built-in geometry */
 #define AAP_VIDEO_TXT AAP_DIR "/video.txt"          /* "margin_w margin_h [dpi]" asked from the phone */
 #define AAP_DRIVER_TXT AAP_DIR "/driver.txt"        /* "left" (default) or "right": driver seat */
+/* Carlinkit CPC200-CCPA CarPlay/AA dongle (ccpa_core.c) */
+#define AAP_CCPA_OFF  AAP_DIR "/ccpa.off"           /* exists = do not look for the dongle */
+#define AAP_CCPA_TXT  AAP_DIR "/ccpa.txt"           /* "width height [fps [dpi]]" asked from the dongle */
+#define AAP_CCPA_USBAUDIO_ON AAP_DIR "/ccpa_usbaudio.on" /* exists = dongle PCM over USB to the DSP ring;
+                                                       missing = phone audio over the car's Bluetooth */
 #define AAP_GPS_TXT   AAP_DIR "/gps.txt"            /* "off": do not send the CIC position to the phone */
 #endif

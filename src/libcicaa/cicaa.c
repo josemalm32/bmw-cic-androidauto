@@ -24,6 +24,7 @@
 #include <pthread.h>
 #include "aa_core.h"
 #include "aa_usb.h"
+#include "ccpa_core.h"
 #include "cic_entropy.h"
 #include "aap_paths.h"
 
@@ -98,7 +99,7 @@ static void *worker(void *arg)
     unsigned char *crt, *key;
     size_t cn = 0, kn = 0;
     char sum[160];
-    int stage;
+    int stage, rc, ccpa;
     (void)arg;
     g_t0 = now_s();
     g_logon = access(AAP_LOGS_ON, F_OK) == 0;
@@ -106,7 +107,9 @@ static void *worker(void *arg)
     lg("=== libcicaa " AAP_VERSION " ===");
     crt = slurp(AAP_DIR "/hu.crt", &cn);
     key = slurp(AAP_DIR "/hu.key", &kn);
-    if (!crt || !key) {
+    /* The CarPlay dongle (CPC200-CCPA) needs no certificate: only a direct AA phone does. */
+    ccpa = access(AAP_CCPA_OFF, F_OK) != 0;
+    if ((!crt || !key) && !ccpa) {
         free(crt); free(key);
         snprintf(g_result, sizeof g_result, "hu.crt/hu.key missing (put AAHU.CRT/AAHU.KEY on the USB stick and reinstall)");
         st("AA certificate missing");
@@ -114,12 +117,20 @@ static void *worker(void *arg)
         return 0;
     }
     pki.crt = crt; pki.crt_len = cn; pki.key = key; pki.key_len = kn; pki.origin = "hu.crt/hu.key";
-    st("Waiting for phone on USB...");
+    st(ccpa ? "Waiting for phone or CarPlay dongle on USB..." : "Waiting for phone on USB...");
     /* 30 s instead of 120 s: a Connect without phone used to stay armed for two minutes
        and then connected by surprise when the phone was plugged in later. */
-    if (aa_usb_open(lg, st, 30, &t) != 0) {
-        snprintf(g_result, sizeof g_result, "no Android Auto phone detected");
+    rc = aa_usb_open2(lg, st, 30, ccpa, &t);
+    if (rc < 0) {
+        snprintf(g_result, sizeof g_result, ccpa ? "no Android Auto phone or CarPlay dongle detected" : "no Android Auto phone detected");
         st("No phone");
+    } else if (rc == 1) {
+        stage = ccpa_session(&t, lg, st, sum, sizeof sum);
+        snprintf(g_result, sizeof g_result, "dongle stage %d/3: %s", stage, sum);
+        st(stage >= 3 ? "Session ended" : "Session ended with error");
+    } else if (!crt || !key) {
+        snprintf(g_result, sizeof g_result, "hu.crt/hu.key missing (put AAHU.CRT/AAHU.KEY on the USB stick and reinstall)");
+        st("AA certificate missing");
     } else {
         stage = aa_session(&t, &pki, lg, st, sum, sizeof sum);
         snprintf(g_result, sizeof g_result, "stage %d/7: %s", stage, sum);

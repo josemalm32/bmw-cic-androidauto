@@ -242,6 +242,7 @@ static void aa_forward_key(const unsigned* v, unsigned valid) {
 }
 typedef bmw::Map<unsigned, bmw::Variant> KeyMap;
 typedef bmw::Delegate<bool, const KeyMap&, void, void, void> KeyHandler;
+static void key_dispatch(int focus, const unsigned* values, unsigned valid);
 static void key_sample(int focus, const KeyMap* map) {
     unsigned values[16], valid = 0;
     for (unsigned i = 0; i < 16; ++i) values[i] = 0;
@@ -261,6 +262,9 @@ static void key_sample(int focus, const KeyMap* map) {
             }
         }
     }
+    key_dispatch(focus, values, valid);
+}
+static void key_dispatch(int focus, const unsigned* values, unsigned valid) {
     if (!focus) {
         /* First key on the (empty) AA page after a focus loss: bring the picture back
            instead of sending the key to the phone (fallback for the focus path below). */
@@ -1268,6 +1272,41 @@ static void map_handlers_init(bmw::PluginApp* app, const KeyHandler& keys, const
     add2(app, PAGE_MAIN_FIRST, 1, &onPageParcel);
 }
 
+/* E90 C13 (B1009) iDrive keys. Its HmiMain has no CTerminalUIApp, so the terminalUI key
+ * map never reaches the plugin. CTerminalUIState::onKeyInputEvent(component, key, f12, f13)
+ * (0x08ced5bc) builds exactly that map (fields 11, 12, 13, as on E9x) and is bound as a
+ * signal slot through its GOT entry 0x08f857d0 (R_SH_GLOB_DAT). The entry is replaced
+ * before the AA terminalUI state is created, so the state connects our function; it
+ * calls the original first and then feeds the same values to key_dispatch(). Only with
+ * the C13 profile and only if the GOT entry and the first 32 bytes of the function
+ * match; otherwise nothing is touched. */
+typedef void (*TuiKeyFn)(void*, void*, int, int, int);
+static unsigned long* g_tui_slot = 0;
+static unsigned long g_tui_orig = 0;
+static const unsigned char kTuiKeySig[32] = {
+    0x86,0x2f,0x96,0x2f,0xa6,0x2f,0xb6,0x2f,0xc6,0x2f,0xd6,0x2f,0xe6,0x2f,0xcb,0xff,
+    0x22,0x4f,0x52,0xc7,0x51,0xdc,0x0c,0x3c,0xa8,0x7f,0xa8,0x7f,0xf3,0x6e,0x43,0x6b};
+static void tui_key_hook(void* self, void* component, int key, int f12, int f13) {
+    ((TuiKeyFn)g_tui_orig)(self, component, key, f12, f13);   /* CIC first, unchanged */
+    unsigned v[16];
+    for (int i = 0; i < 16; ++i) v[i] = 0;
+    v[11] = (unsigned)key; v[12] = (unsigned)(f12 & 0xff); v[13] = (unsigned)(f13 & 0xff);
+    key_dispatch(0, v, (1u << 11) | (1u << 12) | (1u << 13));
+}
+static void tui_hook_install() {
+    const IbaProfile* p = iba_profile_select();
+    if (!p || p->xlat != kXlatC13) return;
+    unsigned long* slot = (unsigned long*)0x08f857d0UL;
+    const unsigned char* code = (const unsigned char*)0x08ced5bcUL;
+    int ok = *slot == 0x08ced5bcUL;
+    for (int i = 0; ok && i < 32; ++i) ok = code[i] == kTuiKeySig[i];
+    if (ok) { g_tui_orig = *slot; g_tui_slot = slot; *slot = (unsigned long)&tui_key_hook; }   /* one aligned store */
+    alog_val("tui key hook", ok ? 1 : (int)*slot);
+}
+static void tui_hook_restore() {
+    if (g_tui_slot) { *g_tui_slot = g_tui_orig; g_tui_slot = 0; }
+}
+
 extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
                             const bmw::Bundle& dependencies, const bmw::Bundle& parameters) {
     if (!name || !*name) return 0;
@@ -1281,6 +1320,7 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
     add(app, ACTION_LOGS, &onLogs);
     KeyHandler keys = {app, &onKeys}, focus = {app, &onFocus}, page = {app, &onPageFocus};
     map_handlers_init(app, keys, focus, page);
+    tui_hook_install();                                  /* E90 C13 only */
     location_init(app);
     g_hmi_tid = pthread_self();
     g_ui_ready = (pthread_mutex_init(g_ui_mtx, 0) == 0);
@@ -1294,6 +1334,7 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
 extern "C" void aap_destroy(void* app) {
     if (!app) return;
     keys_restore();
+    tui_hook_restore();
     auto_runtime_shutdown();
     if (g_iba_target_live && pthread_self() == g_iba_tid) {
         typedef void (*Dtor)(void*); ((Dtor)iba_a(0x08d6ed6cUL))(g_iba_target); g_iba_target_live = 0;

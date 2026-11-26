@@ -56,8 +56,9 @@ public:
     void updateModel(unsigned, int);
     PluginApp(IDispatcher&, BasicString<char>, const Bundle& dependencies, const Bundle& parameters);
     void addHandler(unsigned, const Delegate<bool, const Parcel&, void, void, void>&);
-    void addHandlerWithMap(unsigned, const Delegate<bool, const Map<unsigned, Variant>&, void, void, void>&);
-    void addHandlerWithMap(unsigned, unsigned, const Delegate<bool, const Map<unsigned, Variant>&, void, void, void>&);
+    /* addHandlerWithMap is resolved at run time (map_handlers_init): the 2010 framework
+       (E90 C13, B1009) does not have it. */
+    void addHandler(unsigned, unsigned, const Delegate<bool, const Parcel&, void, void, void>&);
     void updateModel(unsigned, const char*);
     void triggerEvent(unsigned);
 private:
@@ -1232,6 +1233,41 @@ static void keys_restore() {
     for (int k = 0; k < 2; ++k) if (g_kh[k].slot) { *g_kh[k].slot = g_kh[k].orig; g_kh[k].slot = 0; }
 }
 
+/* bmw::PluginApp::addHandlerWithMap exists from the 2011 framework on (E9x 9283417A, E60,
+ * F30). The 2010 one (E90 C13, B1009-500-1019C) has only the Parcel handlers, and its
+ * HmiMain has no CTerminalUIApp, so the terminalUI key/focus maps are never sent there.
+ * Linking the symbol would stop the plugin from loading on C13: it is looked up instead.
+ * Without it the page event is taken through the Parcel handler (same ids) and the
+ * terminalUI ids only log what arrives, for a first car test. Keys still work through
+ * the panel / steering-wheel hooks (keys_install). */
+typedef void (*AddMap1)(bmw::PluginApp*, unsigned, const KeyHandler&);
+typedef void (*AddMap2)(bmw::PluginApp*, unsigned, unsigned, const KeyHandler&);
+static bool onPageParcel(void* obj, const bmw::Parcel&) { status_line(static_cast<bmw::PluginApp*>(obj)); return false; }
+static bool onTuiParcel(void*, const bmw::Parcel&) { alog("terminalUI parcel event (no map framework)"); return false; }
+static void add2(bmw::PluginApp* app, unsigned id, unsigned sub, bool (*stub)(void*, const bmw::Parcel&)) {
+    Handler h; h.object = app; h.stub = stub; app->addHandler(id, sub, h);
+}
+static void map_handlers_init(bmw::PluginApp* app, const KeyHandler& keys, const KeyHandler& focus, const KeyHandler& page) {
+    AddMap1 m1 = 0; AddMap2 m2 = 0;
+    void* h = dlopen("libAppFramework.A.so", 2 /* RTLD_NOW */);
+    if (h) {
+        m1 = (AddMap1)dlsym(h, "_ZN3bmw9PluginApp17addHandlerWithMapEjRKNS_8DelegateIbRKNS_3MapIjNS_7VariantEEEvvvEE");
+        m2 = (AddMap2)dlsym(h, "_ZN3bmw9PluginApp17addHandlerWithMapEjjRKNS_8DelegateIbRKNS_3MapIjNS_7VariantEEEvvvEE");
+    }
+    if (m1 && m2) {
+        m1(app, AA_KEYS, keys);
+        m2(app, AA_SCREEN, 1, focus);
+        m2(app, PAGE_MAIN, 1, page);          /* page opened -> fresh status line */
+        m2(app, PAGE_MAIN_FIRST, 1, page);
+        return;
+    }
+    alog("no addHandlerWithMap (2010 framework): parcel handlers");
+    add(app, AA_KEYS, &onTuiParcel);
+    add2(app, AA_SCREEN, 1, &onTuiParcel);
+    add2(app, PAGE_MAIN, 1, &onPageParcel);
+    add2(app, PAGE_MAIN_FIRST, 1, &onPageParcel);
+}
+
 extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
                             const bmw::Bundle& dependencies, const bmw::Bundle& parameters) {
     if (!name || !*name) return 0;
@@ -1244,10 +1280,7 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
     add(app, ACTION_AUDIO, &onSwitchAudio);
     add(app, ACTION_LOGS, &onLogs);
     KeyHandler keys = {app, &onKeys}, focus = {app, &onFocus}, page = {app, &onPageFocus};
-    app->addHandlerWithMap(AA_KEYS, keys);
-    app->addHandlerWithMap(AA_SCREEN, 1, focus);
-    app->addHandlerWithMap(PAGE_MAIN, 1, page);         /* page opened -> fresh status line */
-    app->addHandlerWithMap(PAGE_MAIN_FIRST, 1, page);
+    map_handlers_init(app, keys, focus, page);
     location_init(app);
     g_hmi_tid = pthread_self();
     g_ui_ready = (pthread_mutex_init(g_ui_mtx, 0) == 0);

@@ -766,11 +766,14 @@ static void iba_run_noop(void*) {}
 static unsigned long g_iba_run_vt[12];
 static const unsigned long kExecVptr = 0x0922d2b8UL, kExecLoop = 0x08d5fce4UL;
 typedef void* (*IbaCurrentPU)();
+/* CProcUnit executor member: 0x3c8 on E9x-family builds, 0x3b8 on the 2010 C13 build
+ * (C13 HmiMain: pu+0x3b8 passed to the executor add, same pattern as E9x pu+0x3c8). */
+static unsigned long iba_pu_exec_off() { return g_iba_profile && g_iba_profile->xlat == kXlatC13 ? 0x3b8UL : 0x3c8UL; }
 static void iba_capture_pu() {
     if (!iba_profile_select()) return;
     void* pu = ((IbaCurrentPU)iba_a(0x08d5c528UL))();
     if (!pu) return;
-    unsigned long* ex = *(unsigned long**)iba_off(pu, 0x3c8);
+    unsigned long* ex = *(unsigned long**)iba_off(pu, iba_pu_exec_off());
     if ((unsigned long)ex != iba_a(kExecVptr) || ex[5] != iba_a(kExecLoop)) return;
     g_iba_pu = pu; g_iba_marshal_ok = 1;
 }
@@ -792,7 +795,7 @@ static int iba_queue() {
     g_iba_run[0] = (unsigned long)g_iba_run_vt;
     g_iba_pending = 1;
     typedef int (*Add)(void*, void*, void*, int, void*);
-    int id = ((Add)iba_a(0x08d5f9a4UL))(iba_off(g_iba_pu, 0x3c8), (void*)g_iba_epoch, (void*)&iba_cb, 0, (void*)g_iba_run);
+    int id = ((Add)iba_a(0x08d5f9a4UL))(iba_off(g_iba_pu, iba_pu_exec_off()), (void*)g_iba_epoch, (void*)&iba_cb, 0, (void*)g_iba_run);
     if (id == -1) g_iba_pending = 0;
     pthread_mutex_unlock(g_iba_queue_mtx);
     return id != -1;

@@ -21,6 +21,7 @@
 static volatile int g_speech_want;
 static void mic_hold(int on) { (void)on; }
 static void mic_poll(aa_t *a) { (void)a; }
+static void mic_session_end(void) {}
 static int microphone_dispatch(aa_t *a, int id, const unsigned char *b, size_t n)
 {
     unsigned long open; int present; pb_t r;
@@ -126,7 +127,8 @@ static void voice_start(void)
     pthread_detach(t);
 }
 
-/* Speech mode, evaluated after every capture read (~64 ms): 0x31 wanted while the phone has the
+/* Speech mode, evaluated in every session-loop pass (mic_poll, <= 20 ms), so AA voice and
+ * navigation prompts (channel 5) also play when the microphone capture is busy/unavailable: 0x31 wanted while the phone has the
  * microphone open, while AA voice is playing (and shortly after), and 4 s after the microphone
  * closed (the answer follows without another source switch). */
 static unsigned g_last_w1, g_last_voice_ms;
@@ -189,13 +191,19 @@ static void *mic_thread(void *arg)
             g_mic_w = w + 2;
         }
         total += (unsigned long)r;
-        speech_tick();
     }
     g_mic_on = 0; g_speech_want = 0; g_play_run = 0;
     snd_pcm_close(pcm);
     if (g_mic_lg) g_mic_lg("mic: capture stopped, %lu bytes read", total);
     g_mic_cap_alive = 0;
     return 0;
+}
+
+/* Session ended (phone gone, possibly mid-voice): no open microphone, no hold, no 0x31. */
+static void mic_session_end(void)
+{
+    g_mic_on = 0; g_mic_hold_until = 0; g_mic_unacked = 0;
+    g_speech_want = 0; g_play_run = 0;
 }
 
 /* Plugin: AA picture shown (1) / gone (0). Capture is held for the whole picture time. */
@@ -245,6 +253,7 @@ static int microphone_dispatch(aa_t *a, int id, const unsigned char *b, size_t n
 static void mic_poll(aa_t *a)
 {
     int k;
+    speech_tick();
     for (k = 0; k < 8 && g_mic_on && g_mic_unacked < g_mic_maxun && g_mic_w - g_mic_r >= MIC_CHUNK; k++) {
         static unsigned char p[8 + MIC_CHUNK];
         unsigned long long ts = mono_us(); unsigned i, r = g_mic_r;

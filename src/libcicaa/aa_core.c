@@ -746,6 +746,7 @@ int aa_session(aa_transport_t *t, const aa_pki_t *pki, aa_log_fn lg, aa_status_f
         }
     }
 out:
+    mic_session_end();
     audio_close();
     av_close();
     if (a->vfd >= 0) close(a->vfd);

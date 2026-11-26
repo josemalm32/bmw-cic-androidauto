@@ -13,7 +13,7 @@
 #define AAP_RIGHT_ON  AAP_DIR "/right.on"           /* screen mode Right: 960 px picture at the right edge */
 #define AAP_FULL_ON   AAP_DIR "/full.on"            /* screen mode Full screen 8:3 (writes video.txt + geom.txt) */
 #define AAP_FULL_TXT  AAP_DIR "/fullscreen.txt"     /* optional "margin_w margin_h dpi" for Full screen */
-#define AAP_NOAUTO_ON AAP_DIR "/noauto.on"          /* exists = no autoconnect */
+#define AAP_AUTO_ON   AAP_DIR "/autoconnect.on"     /* exists = autoconnect (menu button; default off) */
 #define AAP_LANG_TXT  AAP_DIR "/lang.txt"           /* "de" = German status line */
 #define AAP_AAUDIO_ON AAP_DIR "/aaaudio.on"         /* exists = AA audio over USB; missing = BT audio */
 #define AAP_LIB       AAP_DIR "/libcicaa.so"

@@ -114,7 +114,7 @@ typedef char delegate_must_be_two_words[sizeof(Handler) == 8 ? 1 : -1];
 enum {
     ACTION_BACK_MAIN = 3,          /* hmiAction -> page 10 */
     ACTION_CONNECT = 181, ACTION_ZOOM = 185, ACTION_LOGS = 204, ACTION_DISCONNECT = 187,
-    ACTION_AUDIO = 189,
+    ACTION_AUDIO = 189, ACTION_AUTO = 191,
     MODEL_STATUS = 182,            /* connection status text (kept, no label on the page) */
     MODEL_SCREEN = 186,            /* "Screen: <mode>[ | Logs ON]" line */
     PAGE_MAIN = 10, PAGE_MAIN_FIRST = 11,
@@ -853,7 +853,7 @@ static int iba_queue() {
  *    voice control); after the release C4 does not come back by itself, so it is requested
  *    again (AA Audio mode only; in BT Audio mode the CIC's own source plays on).
  *  - autoconnect: 10 s after the plugin start, then every 2 s while no AA session runs, the
- *    Connect button is pressed for the user (not after Disconnect, not with noauto.on).
+ *    Connect button is pressed for the user (only when Autoconnect is on in the menu, not after Disconnect).
  * The connection calls must run on the HMI thread: same executor as iba_queue(), own runnable. */
 static bool onConnect(void* obj, const bmw::Parcel&);
 static unsigned long g_aux_run[16], g_aux_run_vt[12], g_aux_parcel[16];
@@ -878,12 +878,13 @@ static void speech_apply() {
         }
     }
 }
+static int autoconnect_ready();
 static void aux_cb(void* epoch, int, void* runnable) {
     if ((unsigned long)epoch == g_iba_epoch && !auto_is_shutdown() && pthread_self() == g_hmi_tid &&
         runnable == (void*)g_aux_run && ((IbaCurrentPU)iba_a(0x08d5c528UL))() == g_iba_pu) {
         if (g_aux_job_connect) {
             g_aux_job_connect = 0;
-            if (g_app && !g_aa_polling && !g_user_off) { alog("autoconnect"); onConnect(g_app, *reinterpret_cast<const bmw::Parcel*>(g_aux_parcel)); }
+            if (g_app && autoconnect_ready()) { alog("autoconnect"); onConnect(g_app, *reinterpret_cast<const bmw::Parcel*>(g_aux_parcel)); }
         }
         speech_apply();
     }
@@ -903,21 +904,32 @@ static int aux_queue() {
     pthread_mutex_unlock(g_aux_mtx);
     return id != -1;
 }
+/* Autoconnect presses Connect only when that would really start a session: not while the
+ * previous video is still closing or libcicaa is missing (onConnect would only rewrite the
+ * status line every 2 s), not after Disconnect, and only when enabled in the menu. */
+static int autoconnect_ready() {
+    return !g_aa_polling && !g_user_off && !g_live_disp && file_exists(AAP_AUTO_ON) && file_exists(AAP_LIB) &&
+           !auto_busy_control() && !g_iba.owns_resources() && !g_iba_layer && !g_iba_source_changed;
+}
 static volatile int g_ptt_state = 0;
+static volatile int g_aux_stop = 0;
+static int g_aux_tid = 0, g_aux_tid_ok = 0;
 static void* aux_thread(void*) {
     struct timespec t = {0, 100000000};
     long start = mono_ms(), last_try = 0; int disp = 0;
-    while (g_app) {
+    while (!g_aux_stop && g_app) {
         nanosleep(&t, 0);
+        if (g_aux_stop) break;
         int d = g_live_disp;
         if (d != disp) { disp = d; g_ptt_state = 0; if (g_aa_mic_hold) g_aa_mic_hold(d); }
         int want = d && g_aa_speech_want && g_aa_speech_want();
         if (want != g_speech_have) aux_queue();
         long now = mono_ms();
-        if (now - start >= 10000 && now - last_try >= 2000 && !g_aa_polling && !g_user_off && !file_exists(AAP_NOAUTO_ON)) {
+        if (now - start >= 10000 && now - last_try >= 2000 && autoconnect_ready()) {
             last_try = now; g_aux_job_connect = 1; aux_queue();
         }
     }
+    if (disp && g_aa_mic_hold) g_aa_mic_hold(0);
     return 0;
 }
 
@@ -1191,6 +1203,7 @@ static void status_line(bmw::PluginApp* app) {
     n = put_str(b, n, de ? kModeDe[m] : kMode[m]);
     if (de) n = put_str(b, n, g_iba_keep_audio ? " | Ton: USB" : " | Ton: BT");
     else n = put_str(b, n, g_iba_keep_audio ? " | AA Audio" : " | BT Audio");
+    if (file_exists(AAP_AUTO_ON)) n = put_str(b, n, " | Auto");
     if (g_logs) n = put_str(b, n, de ? " | Protokoll an" : " | Logs ON");
     b[n] = 0;
     ui(app, MODEL_SCREEN, b);
@@ -1217,6 +1230,13 @@ static bool onSwitchAudio(void* obj, const bmw::Parcel& p) {
 }
 static bool onZoom(void* obj, const bmw::Parcel&) {
     screen_mode_next();
+    status_line(static_cast<bmw::PluginApp*>(obj));
+    return true;
+}
+/* Autoconnect on/off (autoconnect.on, default off). */
+static bool onAuto(void* obj, const bmw::Parcel&) {
+    if (file_exists(AAP_AUTO_ON)) unlink(AAP_AUTO_ON);
+    else { int f = open(AAP_AUTO_ON, O_WRONLY | O_CREAT | O_TRUNC, 0644); if (f >= 0) close(f); g_user_off = 0; }
     status_line(static_cast<bmw::PluginApp*>(obj));
     return true;
 }
@@ -1436,6 +1456,7 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
     add(app, ACTION_ZOOM, &onZoom);
     add(app, ACTION_AUDIO, &onSwitchAudio);
     add(app, ACTION_LOGS, &onLogs);
+    add(app, ACTION_AUTO, &onAuto);
     KeyHandler keys = {app, &onKeys}, focus = {app, &onFocus}, page = {app, &onPageFocus};
     app->addHandlerWithMap(AA_KEYS, keys);
     app->addHandlerWithMap(AA_SCREEN, 1, focus);
@@ -1449,7 +1470,8 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
     iba_capture_pu();     /* HMI ProcUnit of the loading thread, for native calls */
     if (screen_mode() == 4) full_files(1);   /* the installer removes video.txt/geom.txt not on the stick */
     if (!g_aux_mtx_ok) g_aux_mtx_ok = pthread_mutex_init(g_aux_mtx, 0) == 0;
-    { int t; if (pthread_create(&t, 0, &aux_thread, 0) == 0) pthread_detach(t); }   /* microphone route, autoconnect */
+    g_aux_stop = 0;
+    if (!g_aux_tid_ok) g_aux_tid_ok = pthread_create(&g_aux_tid, 0, &aux_thread, 0) == 0;   /* microphone route, autoconnect */
     /* No updateModel here: the adapter is not started yet (XML text= is the prefix). */
     return app;
 }
@@ -1457,6 +1479,7 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
 extern "C" void aap_destroy(void* app) {
     if (!app) return;
     keys_restore();
+    if (g_aux_tid_ok) { g_aux_stop = 1; pthread_join(g_aux_tid, 0); g_aux_tid_ok = 0; }   /* no plugin code may run after unload */
     auto_runtime_shutdown();
     if (g_iba_target_live && pthread_self() == g_iba_tid) {
         typedef void (*Dtor)(void*); ((Dtor)iba_a(0x08d6ed6cUL))(g_iba_target); g_iba_target_live = 0;

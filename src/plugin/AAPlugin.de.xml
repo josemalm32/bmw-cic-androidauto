@@ -10,6 +10,7 @@
       <hmiAction id="203" target="210" />
       <raAction id="211" />
       <raAction id="204" />
+      <raAction id="191" />
     </actions>
     <models>
       <raDataModel id="182" />
@@ -24,6 +25,7 @@
           <button id="12" action="185" text="Bildmodus" />
           <button id="16" action="189" text="Audio umschalten" />
           <button id="14" action="204" text="Protokoll" />
+          <button id="17" action="191" text="Autoverbinden" />
           <label id="13" text="Bild: " model="186" />
         </components>
       </hmiState>

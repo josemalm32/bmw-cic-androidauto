@@ -16,6 +16,21 @@
  * - Channel 5 arrives faster than real time and per utterance (AV start/stop): keep 0x31 until
  *   everything is played; hold 4 s after the microphone closes so the answer does not need
  *   another C4 <-> 0x31 switch (1-2 s each); prebuffer 0.35 s per utterance. */
+#ifdef CICAA_HOST_TEST
+/* Host test build: no io-audio. Same behaviour as before the microphone: refuse the open. */
+static volatile int g_speech_want;
+static void mic_hold(int on) { (void)on; }
+static void mic_poll(aa_t *a) { (void)a; }
+static int microphone_dispatch(aa_t *a, int id, const unsigned char *b, size_t n)
+{
+    unsigned long open; int present; pb_t r;
+    if (id != 0x8005) return 0;
+    if (audio_uint(b, n, 1, &open, &present) || open > 1) return 1;
+    if (!open) return 0;
+    memset(&r, 0, sizeof r); pb_u(&r, 1, 0); pb_u(&r, 2, 1);
+    return send_msg(a, 7, 0, 0x8006, r.b, r.n) != 0;
+}
+#else
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/asoundlib.h>
@@ -143,7 +158,7 @@ static void *mic_thread(void *arg)
     (void)arg;
     if (snd_pcm_open(&pcm, 0, 0, SND_PCM_OPEN_CAPTURE) < 0) {
         if (g_mic_lg) g_mic_lg("mic: capture device busy/unavailable");
-        g_mic_cap_alive = 0; return 0;
+        g_mic_cap_run = 0; g_mic_cap_alive = 0; return 0;
     }
     snd_pcm_plugin_set_disable(pcm, PLUGIN_DISABLE_MMAP);
     memset(&pp, 0, sizeof pp);
@@ -154,7 +169,7 @@ static void *mic_thread(void *arg)
     pp.buf.block.frag_size = 2048; pp.buf.block.frags_min = 1; pp.buf.block.frags_max = -1;
     if (snd_pcm_plugin_params(pcm, &pp) < 0 || snd_pcm_plugin_prepare(pcm, SND_PCM_CHANNEL_CAPTURE) < 0) {
         if (g_mic_lg) g_mic_lg("mic: capture params refused");
-        snd_pcm_close(pcm); g_mic_cap_alive = 0; return 0;
+        snd_pcm_close(pcm); g_mic_cap_run = 0; g_mic_cap_alive = 0; return 0;
     }
     memset(&su, 0, sizeof su); su.channel = SND_PCM_CHANNEL_CAPTURE;
     snd_pcm_plugin_setup(pcm, &su);
@@ -240,3 +255,4 @@ static void mic_poll(aa_t *a)
         g_mic_unacked++; g_mic_sent++;
     }
 }
+#endif /* CICAA_HOST_TEST */

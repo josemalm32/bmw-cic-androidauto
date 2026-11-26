@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.1.2 (2026-11-26)
+
+Based on PR #23 (@dertechnikfrea) with review fixes. Not yet car-tested as a
+source build.
+
+### New features
+
+- **Car microphone for the Google Assistant and audible AA voice** (channel 5
+  on FABSDS via audio connection 0x31).
+- **Steering-wheel voice button starts the Assistant** while AA is shown
+  (C16A; the hook is skipped on builds whose handler differs).
+- **Six screen modes**: Normal (CIC menu visible), Centred, Left, Right,
+  Stretched, Full screen 8:3. Full screen uses its own `full_video.txt` /
+  `full_geom.txt`; the user's `video.txt` / `geom.txt` are never touched.
+- **Autoconnect** as a menu button, off by default (`autoconnect.on`).
+- `video.txt` option `topleft`; iDrive input leaves sooner (20 ms loop);
+  1 s less USB wait.
+
+### Fixes (review of #23, incl. @0lfu)
+
+- Busy microphone no longer leaves capture marked running.
+- AA voice / navigation prompts play even when the microphone is busy.
+- Microphone and 0x31 state reset when the phone drops mid-voice.
+- Background thread stopped and joined before the plugin is unloaded.
+- Host test build: microphone stubs.
+
 ## 1.1.1 (2026-11-25)
 
 Changes since 1.1.0. Profile-only release: the plugin code is unchanged, so

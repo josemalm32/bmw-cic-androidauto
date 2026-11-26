@@ -72,7 +72,7 @@ fi
 # copy on the CIC is removed and the built-in default applies.
 # geom.txt overrides the built-in geometry (Zoom Mode button) when present.
 # Settings are read at each AA start: they never trigger a reboot.
-for N in geom keymap vlead_ms video driver gps; do
+for N in geom keymap vlead_ms video driver gps fullscreen; do
  typeset -u U=$N
  F=
  for S in "$USB/$N.txt" "$USB/$N.TXT" "$USB/$U.TXT"; do

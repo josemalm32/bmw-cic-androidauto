@@ -124,7 +124,7 @@ def build_libcicaa(t, b, mbedtls):
             t.run('ntosh-gcc-3.3.5', flags + ['-c', f, '-o', o])
         objs.append(o)
     lib = b / 'libcicaa.so'
-    t.run('ntosh-gcc-3.3.5', ['-m4', '-ml', '-shared', '-Wl,-z,defs', '-Wl,-soname,libcicaa.so', '-o', lib] + objs + ['-lusbdi', '-lc'])
+    t.run('ntosh-gcc-3.3.5', ['-m4', '-ml', '-shared', '-Wl,-z,defs', '-Wl,-soname,libcicaa.so', '-o', lib] + objs + ['-lusbdi', '-lasound', '-lc'])
     t.run('ntosh-strip', ['--strip-unneeded', lib])
     return lib
 

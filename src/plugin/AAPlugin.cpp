@@ -14,7 +14,7 @@
  *  Disconnect -> ends the AA session on the phone too (ByeByeRequest).
  *  Switch Audio -> BT Audio (default: phone music over Bluetooth, CIC source kept) or
  *              AA Audio (all AA audio over USB -> DSP); takes effect at the next Connect.
- *  Zoom Mode -> Normal / Fullscreen / Stretched (see screen_mode()).
+ *  Zoom Mode -> Normal / Centred / Left / Right / Stretched / Full screen (see screen_mode()).
  *  Keys     -> in AA Audio mode the steering-wheel and panel skip keys go to the phone
  *              as media next/previous (see key_hook()).
  *  GPS      -> the CIC position (RHMI data model vehicle.location) goes to the phone
@@ -114,7 +114,7 @@ typedef char delegate_must_be_two_words[sizeof(Handler) == 8 ? 1 : -1];
 enum {
     ACTION_BACK_MAIN = 3,          /* hmiAction -> page 10 */
     ACTION_CONNECT = 181, ACTION_ZOOM = 185, ACTION_LOGS = 204, ACTION_DISCONNECT = 187,
-    ACTION_AUDIO = 189,
+    ACTION_AUDIO = 189, ACTION_AUTO = 191,
     MODEL_STATUS = 182,            /* connection status text (kept, no label on the page) */
     MODEL_SCREEN = 186,            /* "Screen: <mode>[ | Logs ON]" line */
     PAGE_MAIN = 10, PAGE_MAIN_FIRST = 11,
@@ -197,6 +197,10 @@ typedef void (*fn_void)(void);
 static fn_int g_aa_start = 0, g_aa_busy = 0, g_aa_proj = 0;
 static fn_str g_aa_status = 0, g_aa_result = 0;
 static fn_input g_aa_input = 0;
+typedef void (*fn_vint)(int);
+static fn_vint g_aa_mic_hold = 0;          /* libcicaa: hold the car microphone while AA is shown */
+static fn_int g_aa_speech_want = 0;        /* libcicaa: 1 = audio connection 0x31 needed */
+static volatile int g_user_off = 0;        /* Disconnect pressed: no autoconnect until Connect */
 static fn_void g_aa_project = 0;
 static volatile int g_aa_polling = 0;
 static volatile int g_live_disp = 0;      /* AA video on screen */
@@ -464,26 +468,77 @@ static int iba_snapshot_rect() {
 static int g_dsp_pid = 0;
 static int g_dsp_attempted = 0;
 /* Screen mode (Zoom Mode button), stored as files so it survives a CIC restart:
- *   none     -> 0 Normal:     picture centred (x 256..1216), CIC menu/arcs stay visible
- *   zoom.on  -> 1 Fullscreen: same size from x = 0, CIC menu layer hidden, rest black
- *   wide.on  -> 2 Stretched:  stretched to the full 1280 px width, CIC menu hidden
- * Built-in geometry (geom.txt is gone: the layout must match what libcicaa asks the
- * phone for, so a free text file only caused broken pictures). */
+ *   none      -> 0 Normal:      720x360 area shown 960x480 at x 256, CIC menu/arcs visible
+ *   center.on -> 1 Centred:     same size centred (x 160), CIC menu hidden, black sides
+ *   zoom.on   -> 2 Left:        same size at the left edge
+ *   right.on  -> 3 Right:       same size at the right edge
+ *   wide.on   -> 4 Stretched:   stretched to the full 1280 px width (distorted)
+ *   full.on   -> 5 Full screen: the phone draws an 8:3 area (full_video.txt "80 210 116 topleft"
+ *                -> 720x270 in the top-left corner) that is scaled to 1280x480 without
+ *                distortion (full_geom.txt). 720 px is the widest the DSP shows of the 800x480
+ *                stream, so this is the sharpest full-screen picture. The phone takes a new
+ *                area only at connection time: switching into or out of it ends the session
+ *                (like Switch Audio) and autoconnect starts the next one.
+ * The CIC menu layer is hidden in every mode except Normal. */
+enum { MODE_NORMAL, MODE_CENTRED, MODE_LEFT, MODE_RIGHT, MODE_STRETCHED, MODE_FULL, MODE_COUNT };
 static int screen_mode() {
-    if (file_exists(AAP_WIDE_ON)) return 2;
-    return file_exists(AAP_ZOOM_ON) ? 1 : 0;
+    if (file_exists(AAP_FULL_ON)) return MODE_FULL;
+    if (file_exists(AAP_WIDE_ON)) return MODE_STRETCHED;
+    if (file_exists(AAP_RIGHT_ON)) return MODE_RIGHT;
+    if (file_exists(AAP_ZOOM_ON)) return MODE_LEFT;
+    return file_exists(AAP_CENTER_ON) ? MODE_CENTRED : MODE_NORMAL;
+}
+static void put_file(const char* path, const char* text) {
+    int f = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (f >= 0) { unsigned n = 0; while (text[n]) ++n; write(f, text, n); close(f); }
+}
+static unsigned num_put(char* b, unsigned n, unsigned v) {
+    char t[12]; int k = 0; do { t[k++] = (char)('0' + v % 10); v /= 10; } while (v);
+    while (k) b[n++] = t[--k];
+    return n;
+}
+/* Full screen on: full_video.txt + full_geom.txt from fullscreen.txt ("margin_w margin_h dpi")
+ * or the built-in 80 210 116; off: both removed. They take precedence over the user's
+ * video.txt / geom.txt, which are never touched. */
+static void full_files(int on) {
+    if (!on) { unlink(AAP_FULL_VIDEO); unlink(AAP_FULL_GEOM); return; }
+    unsigned v[3] = {AAP_FULL_MARGINS}, t[3] = {0, 0, 0}; int k = 0;
+    int f = open(AAP_FULL_TXT, 0);
+    if (f >= 0) {
+        char b[64]; int n = read(f, b, sizeof b - 1); close(f);
+        for (int i = 0; i < n && k < 3; ++i) {
+            if (b[i] < '0' || b[i] > '9') continue;
+            while (i < n && b[i] >= '0' && b[i] <= '9') t[k] = t[k] * 10 + (unsigned)(b[i++] - '0');
+            ++k;
+        }
+        if (k >= 2 && t[0] <= 600 && t[1] <= 320) { v[0] = t[0]; v[1] = t[1]; }
+        if (k >= 3 && t[2] >= 60 && t[2] <= 400) v[2] = t[2];
+    }
+    char b[64]; unsigned n = 0;
+    n = num_put(b, n, v[0]); b[n++] = ' '; n = num_put(b, n, v[1]); b[n++] = ' '; n = num_put(b, n, v[2]);
+    n = put_str(b, n, " topleft\n"); b[n] = 0;
+    put_file(AAP_FULL_VIDEO, b);
+    n = put_str(b, 0, "0 0 "); n = num_put(b, n, 800 - v[0]); b[n++] = ' '; n = num_put(b, n, 480 - v[1]);
+    n = put_str(b, n, " 0 0 1280 480\n"); b[n] = 0;
+    put_file(AAP_FULL_GEOM, b);
 }
 static void screen_mode_next() {
-    int m = (screen_mode() + 1) % 3;
-    unlink(AAP_ZOOM_ON); unlink(AAP_WIDE_ON);
-    if (m) { int f = open(m == 1 ? AAP_ZOOM_ON : AAP_WIDE_ON, O_WRONLY | O_CREAT | O_TRUNC, 0644); if (f >= 0) close(f); }
+    static const char* const kFile[MODE_COUNT] = {0, AAP_CENTER_ON, AAP_ZOOM_ON, AAP_RIGHT_ON, AAP_WIDE_ON, AAP_FULL_ON};
+    int old = screen_mode(), m = (old + 1) % MODE_COUNT;
+    unlink(AAP_CENTER_ON); unlink(AAP_ZOOM_ON); unlink(AAP_RIGHT_ON); unlink(AAP_WIDE_ON); unlink(AAP_FULL_ON);
+    if (m) { int f = open(kFile[m], O_WRONLY | O_CREAT | O_TRUNC, 0644); if (f >= 0) close(f); }
+    if ((old == MODE_FULL) != (m == MODE_FULL)) {
+        full_files(m == MODE_FULL);
+        if (g_aa_busy && g_aa_busy() && g_aa_input) { g_aa_input(CICAA_IN_BYEBYE, 0, 0); alog("Full screen changed: new session"); }
+    }
 }
 static void geom_load(short* g) {
-    static const short def[3][8] = {AAP_GEOM_NORMAL, AAP_GEOM_FULLSCREEN, AAP_GEOM_STRETCHED};
+    static const short def[MODE_COUNT][8] = {AAP_GEOM_NORMAL, AAP_GEOM_CENTRED, AAP_GEOM_LEFT, AAP_GEOM_RIGHT, AAP_GEOM_STRETCHED, AAP_GEOM_FULL};
     int m = screen_mode();
     for (int i = 0; i < 8; ++i) g[i] = def[m][i];
-    /* geom.txt (optional, e.g. with video.txt on an E60) replaces the built-in geometry */
-    int f = open(AAP_GEOM_TXT, 0);
+    /* Full screen: full_geom.txt; otherwise geom.txt (optional, e.g. with video.txt on an E60)
+       replaces the built-in geometry */
+    int f = open(m == MODE_FULL ? AAP_FULL_GEOM : AAP_GEOM_TXT, 0);
     if (f < 0) return;
     char b[80]; int n = read(f, b, sizeof b - 1); close(f);
     if (n <= 0) return;
@@ -708,7 +763,7 @@ static void iba_do(bmw::PluginApp* app, int stopping) {
         ((SetAlpha)vt[14])(g_iba_mgr, 26, 0);
         typedef void (*Enable)(int); ((Enable)iba_a(kLayerHelper))(1); g_iba_layer = 1;
         g_iba.ack(op, 0, 1);
-        if (screen_mode() != 0) menu_hide_for_video();   /* Normal keeps the CIC menu visible */
+        if (screen_mode() != MODE_NORMAL) menu_hide_for_video();   /* Normal keeps the CIC menu visible */
         return;
     }
     if (g_iba.stopping && !live_reap()) return;
@@ -791,6 +846,96 @@ static int iba_queue() {
     if (id == -1) g_iba_pending = 0;
     pthread_mutex_unlock(g_iba_queue_mtx);
     return id != -1;
+}
+
+/* ---------------- microphone route + autoconnect (second HMI-thread job) ----------------
+ * A small thread (started in aap_create) watches three things every 100 ms:
+ *  - AA picture on/off -> cicaa_mic_hold(): libcicaa keeps the car microphone (io-audio
+ *    FACBMIC) open while AA is shown, because BMW's speech service grabs it as soon as
+ *    connection 0x31 comes up and the first opener wins.
+ *  - cicaa_speech_want(): libcicaa needs audio connection 0x31 (car microphone + speech output)
+ *    while the phone listens or AA voice plays. 0x31 replaces C4 (music mutes, as with BMW
+ *    voice control); after the release C4 does not come back by itself, so it is requested
+ *    again (AA Audio mode only; in BT Audio mode the CIC's own source plays on).
+ *  - autoconnect: 10 s after the plugin start, then every 2 s while no AA session runs, the
+ *    Connect button is pressed for the user (only when Autoconnect is on in the menu, not after Disconnect).
+ * The connection calls must run on the HMI thread: same executor as iba_queue(), own runnable. */
+static bool onConnect(void* obj, const bmw::Parcel&);
+static unsigned long g_aux_run[16], g_aux_run_vt[12], g_aux_parcel[16];
+static unsigned long g_aux_mtx[16];
+static int g_aux_mtx_ok = 0, g_aux_pending = 0, g_speech_have = 0;
+static volatile int g_aux_job_connect = 0;
+static unsigned short g_speech_h = 0;
+static void speech_apply() {
+    int want = g_live_disp && g_aa_speech_want && g_aa_speech_want();
+    if (want == g_speech_have || !g_iba_cm) return;
+    typedef int (*Connection)(void*, unsigned short, unsigned short);
+    if (want) {
+        g_speech_h = (unsigned short)iba_handle();
+        int rc = ((Connection)iba_a(0x08b9d308UL))(iba_off(g_iba_cm, 0x6c8), g_speech_h, 0x31);
+        g_speech_have = 1; alog_val("speech: request 0x31", rc);
+    } else {
+        int rc = ((Connection)iba_a(0x08b9d460UL))(iba_off(g_iba_cm, 0x760), g_speech_h, 0x31);
+        g_speech_have = 0; alog_val("speech: release 0x31", rc);
+        if (g_live_disp && g_iba_keep_audio && g_iba.handles[IBA_AUDIO]) {
+            rc = ((Connection)iba_a(0x08b9d308UL))(iba_off(g_iba_cm, 0x6c8), (unsigned short)g_iba.handles[IBA_AUDIO], 0xc4);
+            alog_val("speech: C4 again", rc);
+        }
+    }
+}
+static int autoconnect_ready();
+static void aux_cb(void* epoch, int, void* runnable) {
+    if ((unsigned long)epoch == g_iba_epoch && !auto_is_shutdown() && pthread_self() == g_hmi_tid &&
+        runnable == (void*)g_aux_run && ((IbaCurrentPU)iba_a(0x08d5c528UL))() == g_iba_pu) {
+        if (g_aux_job_connect) {
+            g_aux_job_connect = 0;
+            if (g_app && autoconnect_ready()) { alog("autoconnect"); onConnect(g_app, *reinterpret_cast<const bmw::Parcel*>(g_aux_parcel)); }
+        }
+        speech_apply();
+    }
+    pthread_mutex_lock(g_aux_mtx); g_aux_pending = 0; pthread_mutex_unlock(g_aux_mtx);
+}
+static int aux_queue() {
+    if (!g_iba_marshal_ok || !g_aux_mtx_ok) return 0;
+    pthread_mutex_lock(g_aux_mtx);
+    if (g_aux_pending) { pthread_mutex_unlock(g_aux_mtx); return 0; }
+    for (unsigned i = 0; i < 16; ++i) g_aux_run[i] = 0;
+    for (unsigned i = 0; i < 12; ++i) g_aux_run_vt[i] = (unsigned long)&iba_run_noop;
+    g_aux_run[0] = (unsigned long)g_aux_run_vt;
+    g_aux_pending = 1;
+    typedef int (*Add)(void*, void*, void*, int, void*);
+    int id = ((Add)iba_a(0x08d5f9a4UL))(iba_off(g_iba_pu, 0x3c8), (void*)g_iba_epoch, (void*)&aux_cb, 0, (void*)g_aux_run);
+    if (id == -1) g_aux_pending = 0;
+    pthread_mutex_unlock(g_aux_mtx);
+    return id != -1;
+}
+/* Autoconnect presses Connect only when that would really start a session: not while the
+ * previous video is still closing or libcicaa is missing (onConnect would only rewrite the
+ * status line every 2 s), not after Disconnect, and only when enabled in the menu. */
+static int autoconnect_ready() {
+    return !g_aa_polling && !g_user_off && !g_live_disp && file_exists(AAP_AUTO_ON) && file_exists(AAP_LIB) &&
+           !auto_busy_control() && !g_iba.owns_resources() && !g_iba_layer && !g_iba_source_changed;
+}
+static volatile int g_ptt_state = 0;
+static volatile int g_aux_stop = 0;
+static int g_aux_tid = 0, g_aux_tid_ok = 0;
+static void* aux_thread(void*) {
+    struct timespec t = {0, 100000000};
+    long start = mono_ms(), last_try = 0; int disp = 0;
+    while (!g_aux_stop && g_app) {
+        nanosleep(&t, 0);
+        if (g_aux_stop) break;
+        int d = g_live_disp;
+        if (d != disp) { disp = d; g_ptt_state = 0; if (g_aa_mic_hold) g_aa_mic_hold(d); }
+        int want = d && g_aa_speech_want && g_aa_speech_want();
+        if (want != g_speech_have) aux_queue();
+        long now = mono_ms();
+        if (now - start >= 10000 && now - last_try >= 2000 && autoconnect_ready()) {
+            last_try = now; g_aux_job_connect = 1; aux_queue();
+        }
+    }
+    if (disp && g_aa_mic_hold) g_aa_mic_hold(0);
+    return 0;
 }
 
 /* ---------------- automatic flow (start -> playing -> stop) ---------------- */
@@ -1004,6 +1149,7 @@ static void location_activate(bmw::PluginApp* app);
 static void keys_install();
 static bool onConnect(void* obj, const bmw::Parcel&) {
     bmw::PluginApp* app = static_cast<bmw::PluginApp*>(obj);
+    g_user_off = 0;
     status_line(app);
     location_activate(app);
     keys_install();
@@ -1031,6 +1177,8 @@ static bool onConnect(void* obj, const bmw::Parcel&) {
         g_aa_input = (fn_input)dlsym(h, "cicaa_input");
         g_aa_proj = (fn_int)dlsym(h, "cicaa_projection");
         g_aa_project = (fn_void)dlsym(h, "cicaa_project");
+        g_aa_mic_hold = (fn_vint)dlsym(h, "cicaa_mic_hold");          /* optional: microphone */
+        g_aa_speech_want = (fn_int)dlsym(h, "cicaa_speech_want");
         if (!(g_aa_start && g_aa_busy && g_aa_status && g_aa_result)) { g_aa_start = 0; ui(app, MODEL_STATUS, "libcicaa.so incompatible"); return true; }
     }
     if (g_logs) mkdir(AAP_LOGDIR, 0755);
@@ -1041,17 +1189,18 @@ static bool onConnect(void* obj, const bmw::Parcel&) {
     ui(app, MODEL_STATUS, "Connect the phone via USB...");
     return true;
 }
-/* The one status line of the page: "Screen: Normal | BT Audio" (" | Logs ON" instead of
- * the audio mode while logging). Refreshed when the page opens (also via a programmed
+/* The one status line of the page: "Screen: Normal | BT Audio" (+ " | Auto", " | Logs ON").
+ * Refreshed when the page opens (also via a programmed
  * favourite button), on Connect and after every button press. It also re-reads the
  * audio mode for the next display start. */
 static void status_line(bmw::PluginApp* app) {
-    static const char* const kMode[3] = {"Normal", "Fullscreen", "Stretched"};
+    static const char* const kMode[MODE_COUNT] = {"Normal", "Centred", "Left", "Right", "Stretched", "Full screen"};
     g_iba_keep_audio = file_exists(AAP_AAUDIO_ON);
     char b[96]; unsigned n = put_str(b, 0, "Screen: ");
     n = put_str(b, n, kMode[screen_mode()]);
+    n = put_str(b, n, g_iba_keep_audio ? " | AA Audio" : " | BT Audio");
+    if (file_exists(AAP_AUTO_ON)) n = put_str(b, n, " | Auto");
     if (g_logs) n = put_str(b, n, " | Logs ON");
-    else n = put_str(b, n, g_iba_keep_audio ? " | AA Audio" : " | BT Audio");
     b[n] = 0;
     ui(app, MODEL_SCREEN, b);
 }
@@ -1063,6 +1212,9 @@ static bool onDisconnect(void*, const bmw::Parcel&) {
     if (g_aa_busy && g_aa_busy() && g_aa_input) { g_aa_input(CICAA_IN_BYEBYE, 0, 0); alog("Disconnect pressed"); }
     return true;
 }
+/* The Disconnect button (not Switch Audio, which also ends the session): no autoconnect
+ * until Connect is pressed again. */
+static bool onDisconnectButton(void* obj, const bmw::Parcel& p) { g_user_off = 1; return onDisconnect(obj, p); }
 /* Switch Audio: BT Audio <-> AA Audio (aaaudio.on). The media channel is only announced
  * at service discovery, so a running session is ended (like Disconnect); the next
  * Connect uses the new mode. */
@@ -1074,6 +1226,13 @@ static bool onSwitchAudio(void* obj, const bmw::Parcel& p) {
 }
 static bool onZoom(void* obj, const bmw::Parcel&) {
     screen_mode_next();
+    status_line(static_cast<bmw::PluginApp*>(obj));
+    return true;
+}
+/* Autoconnect on/off (autoconnect.on, default off). */
+static bool onAuto(void* obj, const bmw::Parcel&) {
+    if (file_exists(AAP_AUTO_ON)) unlink(AAP_AUTO_ON);
+    else { int f = open(AAP_AUTO_ON, O_WRONLY | O_CREAT | O_TRUNC, 0644); if (f >= 0) close(f); g_user_off = 0; }
     status_line(static_cast<bmw::PluginApp*>(obj));
     return true;
 }
@@ -1212,6 +1371,53 @@ static int key_hook(int which, void* self, void* msg) {
 }
 static int key_hook_mfl(void* self, void* msg) { return key_hook(0, self, msg); }
 static int key_hook_panel(void* self, void* msg) { return key_hook(1, self, msg); }
+/* Steering-wheel voice button (CPxyControlElementsMFL::CPTTButton1) -> Google Assistant
+ * (AA keycode 84) while the AA picture is shown; otherwise BMW voice control as usual.
+ * Its message handler (vtable slot 6) is generated code: on a status message (op 12) it
+ * calls valid(this,0), decode(msg, this+124, 3), valid(this,1) and notifies two listener
+ * lists. For AA we do the same but skip the notification, so BMW voice control does not
+ * start. The helper addresses are read from the handler's own calls (checked by code
+ * signature), so no per-build address is needed. Each press reaches three proxy instances:
+ * only the first change of the value sends the key. Car test: C16A. */
+typedef void (*PttValid)(void*, int);
+typedef int (*PttDecode)(void*, void*, int);
+static unsigned long* g_ptt_slot = 0;
+static unsigned long g_ptt_orig = 0, g_ptt_valid = 0, g_ptt_dec = 0;
+static unsigned long fnv1a(const unsigned char* p, unsigned n) {
+    unsigned long h = 0x811c9dc5UL; while (n--) h = (h ^ *p++) * 0x01000193UL; return h;
+}
+static unsigned long call_target(unsigned long fn, unsigned bsrf_off, unsigned lit_off) {
+    return fn + bsrf_off + 4 + *(const unsigned long*)(fn + lit_off);   /* mov.l @(lit),r1; bsrf r1 */
+}
+static int ptt_hook(void* self, void* msg) {
+    if (((unsigned char*)msg)[8] != 12 || !g_live_disp || !g_aa_input || !g_aa_busy || !g_aa_busy())
+        return ((MsgHandler)g_ptt_orig)(self, msg);
+    ((PttValid)g_ptt_valid)(self, 0);
+    if (!((PttDecode)g_ptt_dec)(msg, (char*)self + 124, 3)) return 0;
+    ((PttValid)g_ptt_valid)(self, 1);
+    int v = *(int*)((char*)self + 124), prev = g_ptt_state;
+    g_ptt_state = v;
+    if (v == 1 && prev != 1) {                         /* 1 = pressed, 0 = released */
+        g_aa_input(CICAA_IN_KEY, 84, 1); g_aa_input(CICAA_IN_KEY, 84, 0);
+        alog("PTT -> Google Assistant");
+    }
+    return 1;
+}
+static void ptt_install(void* self) {
+    unsigned long* vt = self ? (unsigned long*)dlsym(self, "_ZTVN22CPxyControlElementsMFL11CPTTButton1E") : 0;
+    unsigned long* slot = vt ? vt + 8 : 0;
+    unsigned long fn = slot ? *slot : 0;
+    int ok = fn >= 0x08040000UL && fn < 0x09200000UL && fnv1a((const unsigned char*)fn, 0x9c) == 0xe48a3b07UL;
+    unsigned long valid = 0, dec = 0, notify = 0;
+    if (ok) {
+        valid = call_target(fn, 0x3e, 0xa0); dec = call_target(fn, 0x4a, 0xa4); notify = call_target(fn, 0x62, 0xac);
+        ok = valid == call_target(fn, 0x58, 0xa8) && notify == call_target(fn, 0x6c, 0xb0) &&
+             fnv1a((const unsigned char*)valid, 16) == 0xe29bb935UL && fnv1a((const unsigned char*)notify, 16) == 0x0d76613cUL &&
+             fnv1a((const unsigned char*)dec, 16) == 0xd73400f9UL;
+    }
+    if (ok) { g_ptt_orig = fn; g_ptt_valid = valid; g_ptt_dec = dec; g_ptt_slot = slot; *slot = (unsigned long)&ptt_hook; }
+    alog_val("keys voice button hook", ok);
+}
 static void keys_install() {
     if (g_keys_tried) return;
     g_keys_tried = 1;
@@ -1227,9 +1433,11 @@ static void keys_install() {
         if (ok) { h.slot = slot; *slot = (unsigned long)h.hook; }   /* one aligned store */
         alog_val(k ? "keys panel hook" : "keys mfl hook", ok ? 1 : slot ? (int)*slot : 0);
     }
+    ptt_install(self);
 }
 static void keys_restore() {
     for (int k = 0; k < 2; ++k) if (g_kh[k].slot) { *g_kh[k].slot = g_kh[k].orig; g_kh[k].slot = 0; }
+    if (g_ptt_slot) { *g_ptt_slot = g_ptt_orig; g_ptt_slot = 0; }
 }
 
 extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
@@ -1239,10 +1447,11 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
     if (!app) return 0;
     g_logs = file_exists(AAP_LOGS_ON);
     add(app, ACTION_CONNECT, &onConnect);
-    add(app, ACTION_DISCONNECT, &onDisconnect);
+    add(app, ACTION_DISCONNECT, &onDisconnectButton);
     add(app, ACTION_ZOOM, &onZoom);
     add(app, ACTION_AUDIO, &onSwitchAudio);
     add(app, ACTION_LOGS, &onLogs);
+    add(app, ACTION_AUTO, &onAuto);
     KeyHandler keys = {app, &onKeys}, focus = {app, &onFocus}, page = {app, &onPageFocus};
     app->addHandlerWithMap(AA_KEYS, keys);
     app->addHandlerWithMap(AA_SCREEN, 1, focus);
@@ -1254,6 +1463,10 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
     g_app = app;
     auto_runtime_init();
     iba_capture_pu();     /* HMI ProcUnit of the loading thread, for native calls */
+    full_files(screen_mode() == MODE_FULL);          /* Full screen files match the stored mode */
+    if (!g_aux_mtx_ok) g_aux_mtx_ok = pthread_mutex_init(g_aux_mtx, 0) == 0;
+    g_aux_stop = 0;
+    if (!g_aux_tid_ok) g_aux_tid_ok = pthread_create(&g_aux_tid, 0, &aux_thread, 0) == 0;   /* microphone route, autoconnect */
     /* No updateModel here: the adapter is not started yet (XML text= is the prefix). */
     return app;
 }
@@ -1261,6 +1474,7 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
 extern "C" void aap_destroy(void* app) {
     if (!app) return;
     keys_restore();
+    if (g_aux_tid_ok) { g_aux_stop = 1; pthread_join(g_aux_tid, 0); g_aux_tid_ok = 0; }   /* no plugin code may run after unload */
     auto_runtime_shutdown();
     if (g_iba_target_live && pthread_self() == g_iba_tid) {
         typedef void (*Dtor)(void*); ((Dtor)iba_a(0x08d6ed6cUL))(g_iba_target); g_iba_target_live = 0;

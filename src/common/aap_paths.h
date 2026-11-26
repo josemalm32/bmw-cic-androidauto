@@ -4,12 +4,19 @@
  * the plugin's buttons (zoom.on / wide.on, later aaaudio.on). */
 #ifndef AAP_PATHS_H
 #define AAP_PATHS_H
-#define AAP_VERSION   "1.1.1"
+#define AAP_VERSION   "1.1.2"
 #define AAP_DIR       "/mnt/hbdebug/aap"            /* HDD: binaries + certificate (installer) */
 #define AAP_LOGS_ON   AAP_DIR "/logs.on"            /* exists = logging enabled */
 #define AAP_LOGDIR    AAP_DIR "/logs"               /* log files (only when enabled) */
-#define AAP_ZOOM_ON   AAP_DIR "/zoom.on"            /* screen mode Fullscreen (Zoom Mode button) */
+#define AAP_ZOOM_ON   AAP_DIR "/zoom.on"            /* screen mode Left (old Fullscreen, Zoom Mode button) */
+#define AAP_CENTER_ON AAP_DIR "/center.on"          /* screen mode Centred: 960 px picture at x 160, CIC menu hidden */
 #define AAP_WIDE_ON   AAP_DIR "/wide.on"            /* screen mode Stretched */
+#define AAP_RIGHT_ON  AAP_DIR "/right.on"           /* screen mode Right: 960 px picture at the right edge */
+#define AAP_FULL_ON   AAP_DIR "/full.on"            /* screen mode Full screen 8:3 (writes full_video.txt + full_geom.txt) */
+#define AAP_FULL_TXT  AAP_DIR "/fullscreen.txt"     /* optional "margin_w margin_h dpi" for Full screen */
+#define AAP_FULL_VIDEO AAP_DIR "/full_video.txt"    /* written by the plugin in Full screen: replaces video.txt */
+#define AAP_FULL_GEOM  AAP_DIR "/full_geom.txt"     /* written by the plugin in Full screen: replaces geom.txt */
+#define AAP_AUTO_ON   AAP_DIR "/autoconnect.on"     /* exists = autoconnect (menu button; default off) */
 #define AAP_AAUDIO_ON AAP_DIR "/aaaudio.on"         /* exists = AA audio over USB; missing = BT audio */
 #define AAP_LIB       AAP_DIR "/libcicaa.so"
 #define AAP_LIVE      AAP_DIR "/cicaalive"
@@ -37,9 +44,13 @@
 #define AAP_UI_MARGIN_RIGHT  80
 /* sx sy sw sh (crop in the 800x480 stream), dx dy dw dh (on the 1280x480 display).
  * x = 256 leaves the CIC's left arc/menu column visible and centres the picture. */
-#define AAP_GEOM_NORMAL     {0, 0, 720, 360, 256, 0,  960, 480}
-#define AAP_GEOM_FULLSCREEN {0, 0, 720, 360,   0, 0,  960, 480}   /* same size, no CIC menu */
+#define AAP_GEOM_NORMAL     {0, 0, 720, 360, 256, 0,  960, 480}   /* CIC menu/arcs visible on the left */
+#define AAP_GEOM_CENTRED    {0, 0, 720, 360, 160, 0,  960, 480}   /* centred, CIC menu hidden, black sides */
+#define AAP_GEOM_LEFT       {0, 0, 720, 360,   0, 0,  960, 480}   /* same size at the left edge */
+#define AAP_GEOM_RIGHT      {0, 0, 720, 360, 320, 0,  960, 480}   /* same size at the right edge */
 #define AAP_GEOM_STRETCHED  {0, 0, 720, 360,   0, 0, 1280, 480}   /* full width, distorted */
+#define AAP_GEOM_FULL       {0, 0, 720, 270,   0, 0, 1280, 480}   /* 8:3 area asked from the phone (video.txt), full screen */
+#define AAP_FULL_MARGINS    80, 210, 116                          /* -> 720 x 270 top-left, dpi 116 */
 /* Video lead: PTS = arrival + lead. Car tests: 50 ms gives clearly the most direct
  * response; 150/300 ms only add latency (the DSP shows frames in its own clock anyway).
  * vlead_ms.txt can still raise it. */

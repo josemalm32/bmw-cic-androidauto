@@ -264,7 +264,7 @@ int aa_usb_open(aa_log_fn lg, aa_status_fn st, int wait_s, aa_transport_t *t)
     memset(&hi, 0, sizeof hi);
     if (usbd_hcd_info(g_conn, &hi) == 0)
         lg("USB hcd ctrl=%.8s caps=0x%x ndev=%d", hi.controller, (unsigned)hi.capabilities, hi.ndev);
-    sleep(2);   /* let existing devices be reported */
+    sleep(1);   /* let existing devices be reported (1 s is enough; was 2) */
     for (s = 0; s < wait_s; ++s) {
         if (find_inst(1, &in)) {
             if (!switched) {

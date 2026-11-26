@@ -131,18 +131,7 @@ static void audio_discovery(pb_t *sd)
         pb_u(&ch,1,7);pb_msg(&ch,5,&sub);pb_msg(sd,1,&ch);
     }
 }
-/* Discovery permits startup; native capture is still unavailable. Never send
- * fabricated samples or claim an open succeeded without a capture backend. */
-static int microphone_dispatch(aa_t *a,int id,const unsigned char *b,size_t n)
-{
-    unsigned long open;int present;pb_t r;
-    if(id!=0x8005) return 0;
-    if(audio_uint(b,n,1,&open,&present) || open>1) return 1;
-    if(!open) {a->lg("AA microphone CLOSE (no native capture)");return 0;}
-    memset(&r,0,sizeof r);pb_u(&r,1,0);pb_u(&r,2,1);
-    a->lg("AA microphone OPEN unavailable: native capture not implemented");
-    return send_msg(a,7,0,0x8006,r.b,r.n)!=0;
-}
+#include "aa_mic.h"   /* car microphone (channel 7) and AA voice output (channel 5) */
 static int audio_open(aa_t *a,int ch)
 {
     aa_audio_state *s=&aa_audio[ch-4]; char path[100];

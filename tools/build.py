@@ -200,7 +200,7 @@ def main():
     for name, path in files.items():
         shutil.copyfile(path, pay / name)
         print(f'  {name:14s} {path.stat().st_size:8d} bytes')
-    for name in ('AAPlugin.xml', 'AAPlugin.de.xml', 'AAPlugin.manifest'):
+    for name in ('AAPlugin.xml', 'AAPlugin.manifest'):
         shutil.copyfile(SRC / 'plugin' / name, pay / name)
     script = (ROOT / 'installer/copie_scr.plain.sh').read_text().replace('@VERSION@', ver)
     script = script.replace('\r\n', '\n').encode()

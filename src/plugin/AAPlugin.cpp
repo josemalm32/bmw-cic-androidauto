@@ -472,9 +472,9 @@ static int g_dsp_attempted = 0;
  *   zoom.on   -> 1 Left:        same size at the left edge
  *   right.on  -> 2 Right:       same size at the right edge
  *   wide.on   -> 3 Stretched:   stretched to the full 1280 px width (distorted)
- *   full.on   -> 4 Full screen: the phone draws an 8:3 area (video.txt "80 210 116 topleft"
+ *   full.on   -> 4 Full screen: the phone draws an 8:3 area (full_video.txt "80 210 116 topleft"
  *                -> 720x270 in the top-left corner) that is scaled to 1280x480 without
- *                distortion (geom.txt). 720 px is the widest the DSP shows of the 800x480
+ *                distortion (full_geom.txt). 720 px is the widest the DSP shows of the 800x480
  *                stream, so this is the sharpest full-screen picture. The phone takes a new
  *                area only at connection time: switching into or out of it ends the session
  *                (like Switch Audio) and autoconnect starts the next one.
@@ -494,10 +494,11 @@ static unsigned num_put(char* b, unsigned n, unsigned v) {
     while (k) b[n++] = t[--k];
     return n;
 }
-/* Full screen on: video.txt + geom.txt from fullscreen.txt ("margin_w margin_h dpi") or the
- * built-in 80 210 116; off: both removed (built-in geometry, built-in margins). */
+/* Full screen on: full_video.txt + full_geom.txt from fullscreen.txt ("margin_w margin_h dpi")
+ * or the built-in 80 210 116; off: both removed. They take precedence over the user's
+ * video.txt / geom.txt, which are never touched. */
 static void full_files(int on) {
-    if (!on) { unlink(AAP_VIDEO_TXT); unlink(AAP_GEOM_TXT); return; }
+    if (!on) { unlink(AAP_FULL_VIDEO); unlink(AAP_FULL_GEOM); return; }
     unsigned v[3] = {AAP_FULL_MARGINS}, t[3] = {0, 0, 0}; int k = 0;
     int f = open(AAP_FULL_TXT, 0);
     if (f >= 0) {
@@ -513,10 +514,10 @@ static void full_files(int on) {
     char b[64]; unsigned n = 0;
     n = num_put(b, n, v[0]); b[n++] = ' '; n = num_put(b, n, v[1]); b[n++] = ' '; n = num_put(b, n, v[2]);
     n = put_str(b, n, " topleft\n"); b[n] = 0;
-    put_file(AAP_VIDEO_TXT, b);
+    put_file(AAP_FULL_VIDEO, b);
     n = put_str(b, 0, "0 0 "); n = num_put(b, n, 800 - v[0]); b[n++] = ' '; n = num_put(b, n, 480 - v[1]);
     n = put_str(b, n, " 0 0 1280 480\n"); b[n] = 0;
-    put_file(AAP_GEOM_TXT, b);
+    put_file(AAP_FULL_GEOM, b);
 }
 static void screen_mode_next() {
     static const char* const kFile[5] = {0, AAP_ZOOM_ON, AAP_RIGHT_ON, AAP_WIDE_ON, AAP_FULL_ON};
@@ -532,8 +533,9 @@ static void geom_load(short* g) {
     static const short def[5][8] = {AAP_GEOM_NORMAL, AAP_GEOM_LEFT, AAP_GEOM_RIGHT, AAP_GEOM_STRETCHED, AAP_GEOM_FULL};
     int m = screen_mode();
     for (int i = 0; i < 8; ++i) g[i] = def[m][i];
-    /* geom.txt (optional, e.g. with video.txt on an E60) replaces the built-in geometry */
-    int f = open(AAP_GEOM_TXT, 0);
+    /* Full screen: full_geom.txt; otherwise geom.txt (optional, e.g. with video.txt on an E60)
+       replaces the built-in geometry */
+    int f = open(m == 4 ? AAP_FULL_GEOM : AAP_GEOM_TXT, 0);
     if (f < 0) return;
     char b[80]; int n = read(f, b, sizeof b - 1); close(f);
     if (n <= 0) return;
@@ -1184,27 +1186,18 @@ static bool onConnect(void* obj, const bmw::Parcel&) {
     ui(app, MODEL_STATUS, "Connect the phone via USB...");
     return true;
 }
-/* The one status line of the page: "Screen: Normal | BT Audio" (+ " | Logs ON" while
- * logging; German with lang.txt "de": "Bild: Normal | Ton: BT | Protokoll an"). Refreshed when the page opens (also via a programmed
+/* The one status line of the page: "Screen: Normal | BT Audio" (+ " | Auto", " | Logs ON").
+ * Refreshed when the page opens (also via a programmed
  * favourite button), on Connect and after every button press. It also re-reads the
  * audio mode for the next display start. */
-static int lang_de() {
-    char b[8]; int f = open(AAP_LANG_TXT, 0);
-    if (f < 0) return 0;
-    int n = read(f, b, sizeof b); close(f);
-    return n >= 2 && (b[0] == 'd' || b[0] == 'D') && (b[1] == 'e' || b[1] == 'E');
-}
 static void status_line(bmw::PluginApp* app) {
     static const char* const kMode[5] = {"Normal", "Left", "Right", "Stretched", "Full screen"};
-    static const char* const kModeDe[5] = {"Normal", "Links", "Rechts", "Gestreckt", "Vollbild"};
     g_iba_keep_audio = file_exists(AAP_AAUDIO_ON);
-    int de = lang_de(), m = screen_mode();
-    char b[96]; unsigned n = put_str(b, 0, de ? "Bild: " : "Screen: ");
-    n = put_str(b, n, de ? kModeDe[m] : kMode[m]);
-    if (de) n = put_str(b, n, g_iba_keep_audio ? " | Ton: USB" : " | Ton: BT");
-    else n = put_str(b, n, g_iba_keep_audio ? " | AA Audio" : " | BT Audio");
+    char b[96]; unsigned n = put_str(b, 0, "Screen: ");
+    n = put_str(b, n, kMode[screen_mode()]);
+    n = put_str(b, n, g_iba_keep_audio ? " | AA Audio" : " | BT Audio");
     if (file_exists(AAP_AUTO_ON)) n = put_str(b, n, " | Auto");
-    if (g_logs) n = put_str(b, n, de ? " | Protokoll an" : " | Logs ON");
+    if (g_logs) n = put_str(b, n, " | Logs ON");
     b[n] = 0;
     ui(app, MODEL_SCREEN, b);
 }
@@ -1245,7 +1238,6 @@ static bool onLogs(void* obj, const bmw::Parcel&) {
     if (g_logs) { unlink(AAP_LOGS_ON); g_logs = 0; }
     else {
         mkdir(AAP_LOGDIR, 0755);
-        unlink(AAP_LOGDIR "/plugin.log"); unlink(AAP_LOGDIR "/cicaa.log"); unlink(AAP_LOGDIR "/cicaalive.log");   /* fresh logs */
         int f = open(AAP_LOGS_ON, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (f >= 0) { close(f); g_logs = 1; alog("=== logs ON, AAPlugin " AAP_VERSION " ==="); }
     }
@@ -1468,7 +1460,7 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
     g_app = app;
     auto_runtime_init();
     iba_capture_pu();     /* HMI ProcUnit of the loading thread, for native calls */
-    if (screen_mode() == 4) full_files(1);   /* the installer removes video.txt/geom.txt not on the stick */
+    full_files(screen_mode() == 4);          /* Full screen files match the stored mode */
     if (!g_aux_mtx_ok) g_aux_mtx_ok = pthread_mutex_init(g_aux_mtx, 0) == 0;
     g_aux_stop = 0;
     if (!g_aux_tid_ok) g_aux_tid_ok = pthread_create(&g_aux_tid, 0, &aux_thread, 0) == 0;   /* microphone route, autoconnect */

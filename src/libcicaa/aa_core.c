@@ -274,7 +274,8 @@ static int video_cfg(unsigned *mw, unsigned *mh, unsigned *dpi)
 {
     char b[64]; unsigned v[3]; int k = 0; const char *p = b;
     *mw = AAP_MARGIN_W; *mh = AAP_MARGIN_H; *dpi = AAP_DPI; g_video_topleft = 1;
-    if (!read_small(AAP_VIDEO_TXT, b, sizeof b)) return 0;
+    /* full_video.txt (plugin, Full screen mode) wins over the user's video.txt */
+    if (!read_small(AAP_FULL_VIDEO, b, sizeof b) && !read_small(AAP_VIDEO_TXT, b, sizeof b)) return 0;
     /* optional 4th word "topleft": keep the UI area in the top-left corner (ui_config) as
        with the built-in margins. The DSP shows only the left 720 columns of the 800x480
        stream, so a centred area can be at most ~600 px wide, a top-left one 720 px:

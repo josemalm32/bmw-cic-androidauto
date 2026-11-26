@@ -72,7 +72,7 @@ fi
 # copy on the CIC is removed and the built-in default applies.
 # geom.txt overrides the built-in geometry (Zoom Mode button) when present.
 # Settings are read at each AA start: they never trigger a reboot.
-for N in geom keymap vlead_ms video driver gps lang fullscreen; do
+for N in geom keymap vlead_ms video driver gps fullscreen; do
  typeset -u U=$N
  F=
  for S in "$USB/$N.txt" "$USB/$N.TXT" "$USB/$U.TXT"; do
@@ -98,17 +98,8 @@ inst /tmp/aap_dsp.bin "$DIR/dvd_dm642_aa.bin" 644 || { flush; exit 83; }
 rm -f /tmp/aap_dsp.bin
 
 # ---- 2b. plugin on flash ----
-# Menu language: lang.txt "de" on the stick -> German menu (AAPlugin.de.xml); the plugin reads
-# the installed lang.txt for its status line.
-XMLSRC="$PAY/AAPlugin.xml"
-for S in "$USB/lang.txt" "$USB/LANG.TXT"; do
- [ -f "$S" ] || continue
- read W < "$S"
- case "$W" in de*|DE*) [ -f "$PAY/AAPlugin.de.xml" ] && XMLSRC="$PAY/AAPlugin.de.xml";; esac
-done
-px() { if [ "$1" = xml ]; then echo "$XMLSRC"; else echo "$PAY/AAPlugin.$1"; fi; }
 PCHG=0
-for S in so xml manifest; do "$V" verify "$TARGET/AAPlugin.$S" "$(px $S)" || PCHG=1; done
+for S in so xml manifest; do "$V" verify "$TARGET/AAPlugin.$S" "$PAY/AAPlugin.$S" || PCHG=1; done
 LCHG=0
 [ -f "$LEGACY/CicMenuDemo.so" ] && LCHG=1
 if [ "$PCHG" = 1 ] || [ "$LCHG" = 1 ]; then
@@ -124,12 +115,12 @@ if [ "$PCHG" = 1 ] || [ "$LCHG" = 1 ]; then
   mkdir -p "$TARGET" || OK=0
   for S in so xml manifest; do
    [ "$OK" = 1 ] || break
-   cp "$(px $S)" "$TARGET/.AAPlugin.$S.new" && "$V" verify "$TARGET/.AAPlugin.$S.new" "$(px $S)" || OK=0
+   cp "$PAY/AAPlugin.$S" "$TARGET/.AAPlugin.$S.new" && "$V" verify "$TARGET/.AAPlugin.$S.new" "$PAY/AAPlugin.$S" || OK=0
   done
   if [ "$OK" = 1 ]; then
    for S in so xml manifest; do
     chmod 555 "$TARGET/.AAPlugin.$S.new"
-    mv -f "$TARGET/.AAPlugin.$S.new" "$TARGET/AAPlugin.$S" && "$V" verify "$TARGET/AAPlugin.$S" "$(px $S)" || OK=0
+    mv -f "$TARGET/.AAPlugin.$S.new" "$TARGET/AAPlugin.$S" && "$V" verify "$TARGET/AAPlugin.$S" "$PAY/AAPlugin.$S" || OK=0
    done
   fi
   rm -f "$TARGET"/.AAPlugin.*.new
@@ -150,7 +141,7 @@ fi
 for ALT in /mnt/hbuser/*/ro/Plugins; do
  [ -d "$ALT" ] || continue
  mkdir -p "$ALT/AAP" || { echo "ALT_DIR_FAIL $ALT"; continue; }
- for S in xml manifest; do inst "$(px $S)" "$ALT/AAP/AAPlugin.$S" 644; done
+ for S in xml manifest; do inst "$PAY/AAPlugin.$S" "$ALT/AAP/AAPlugin.$S" 644; done
  ls -l "$ALT/AAP"
 done
 ls -l "$TARGET" "$DIR"

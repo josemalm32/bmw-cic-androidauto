@@ -11,10 +11,11 @@
 #define AAP_ZOOM_ON   AAP_DIR "/zoom.on"            /* screen mode Fullscreen (Zoom Mode button) */
 #define AAP_WIDE_ON   AAP_DIR "/wide.on"            /* screen mode Stretched */
 #define AAP_RIGHT_ON  AAP_DIR "/right.on"           /* screen mode Right: 960 px picture at the right edge */
-#define AAP_FULL_ON   AAP_DIR "/full.on"            /* screen mode Full screen 8:3 (writes video.txt + geom.txt) */
+#define AAP_FULL_ON   AAP_DIR "/full.on"            /* screen mode Full screen 8:3 (writes full_video.txt + full_geom.txt) */
 #define AAP_FULL_TXT  AAP_DIR "/fullscreen.txt"     /* optional "margin_w margin_h dpi" for Full screen */
+#define AAP_FULL_VIDEO AAP_DIR "/full_video.txt"    /* written by the plugin in Full screen: replaces video.txt */
+#define AAP_FULL_GEOM  AAP_DIR "/full_geom.txt"     /* written by the plugin in Full screen: replaces geom.txt */
 #define AAP_AUTO_ON   AAP_DIR "/autoconnect.on"     /* exists = autoconnect (menu button; default off) */
-#define AAP_LANG_TXT  AAP_DIR "/lang.txt"           /* "de" = German status line */
 #define AAP_AAUDIO_ON AAP_DIR "/aaaudio.on"         /* exists = AA audio over USB; missing = BT audio */
 #define AAP_LIB       AAP_DIR "/libcicaa.so"
 #define AAP_LIVE      AAP_DIR "/cicaalive"

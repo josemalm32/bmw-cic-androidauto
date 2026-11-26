@@ -14,7 +14,7 @@
  *  Disconnect -> ends the AA session on the phone too (ByeByeRequest).
  *  Switch Audio -> BT Audio (default: phone music over Bluetooth, CIC source kept) or
  *              AA Audio (all AA audio over USB -> DSP); takes effect at the next Connect.
- *  Zoom Mode -> Normal / Fullscreen / Stretched (see screen_mode()).
+ *  Zoom Mode -> Normal / Centred / Left / Right / Stretched / Full screen (see screen_mode()).
  *  Keys     -> in AA Audio mode the steering-wheel and panel skip keys go to the phone
  *              as media next/previous (see key_hook()).
  *  GPS      -> the CIC position (RHMI data model vehicle.location) goes to the phone
@@ -468,22 +468,25 @@ static int iba_snapshot_rect() {
 static int g_dsp_pid = 0;
 static int g_dsp_attempted = 0;
 /* Screen mode (Zoom Mode button), stored as files so it survives a CIC restart:
- *   none      -> 0 Normal:      720x360 area shown 960x480, centred (x 160), black sides
- *   zoom.on   -> 1 Left:        same size at the left edge
- *   right.on  -> 2 Right:       same size at the right edge
- *   wide.on   -> 3 Stretched:   stretched to the full 1280 px width (distorted)
- *   full.on   -> 4 Full screen: the phone draws an 8:3 area (full_video.txt "80 210 116 topleft"
+ *   none      -> 0 Normal:      720x360 area shown 960x480 at x 256, CIC menu/arcs visible
+ *   center.on -> 1 Centred:     same size centred (x 160), CIC menu hidden, black sides
+ *   zoom.on   -> 2 Left:        same size at the left edge
+ *   right.on  -> 3 Right:       same size at the right edge
+ *   wide.on   -> 4 Stretched:   stretched to the full 1280 px width (distorted)
+ *   full.on   -> 5 Full screen: the phone draws an 8:3 area (full_video.txt "80 210 116 topleft"
  *                -> 720x270 in the top-left corner) that is scaled to 1280x480 without
  *                distortion (full_geom.txt). 720 px is the widest the DSP shows of the 800x480
  *                stream, so this is the sharpest full-screen picture. The phone takes a new
  *                area only at connection time: switching into or out of it ends the session
  *                (like Switch Audio) and autoconnect starts the next one.
- * The CIC menu layer is hidden in every mode. */
+ * The CIC menu layer is hidden in every mode except Normal. */
+enum { MODE_NORMAL, MODE_CENTRED, MODE_LEFT, MODE_RIGHT, MODE_STRETCHED, MODE_FULL, MODE_COUNT };
 static int screen_mode() {
-    if (file_exists(AAP_FULL_ON)) return 4;
-    if (file_exists(AAP_WIDE_ON)) return 3;
-    if (file_exists(AAP_RIGHT_ON)) return 2;
-    return file_exists(AAP_ZOOM_ON) ? 1 : 0;
+    if (file_exists(AAP_FULL_ON)) return MODE_FULL;
+    if (file_exists(AAP_WIDE_ON)) return MODE_STRETCHED;
+    if (file_exists(AAP_RIGHT_ON)) return MODE_RIGHT;
+    if (file_exists(AAP_ZOOM_ON)) return MODE_LEFT;
+    return file_exists(AAP_CENTER_ON) ? MODE_CENTRED : MODE_NORMAL;
 }
 static void put_file(const char* path, const char* text) {
     int f = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -520,22 +523,22 @@ static void full_files(int on) {
     put_file(AAP_FULL_GEOM, b);
 }
 static void screen_mode_next() {
-    static const char* const kFile[5] = {0, AAP_ZOOM_ON, AAP_RIGHT_ON, AAP_WIDE_ON, AAP_FULL_ON};
-    int old = screen_mode(), m = (old + 1) % 5;
-    unlink(AAP_ZOOM_ON); unlink(AAP_RIGHT_ON); unlink(AAP_WIDE_ON); unlink(AAP_FULL_ON);
+    static const char* const kFile[MODE_COUNT] = {0, AAP_CENTER_ON, AAP_ZOOM_ON, AAP_RIGHT_ON, AAP_WIDE_ON, AAP_FULL_ON};
+    int old = screen_mode(), m = (old + 1) % MODE_COUNT;
+    unlink(AAP_CENTER_ON); unlink(AAP_ZOOM_ON); unlink(AAP_RIGHT_ON); unlink(AAP_WIDE_ON); unlink(AAP_FULL_ON);
     if (m) { int f = open(kFile[m], O_WRONLY | O_CREAT | O_TRUNC, 0644); if (f >= 0) close(f); }
-    if ((old == 4) != (m == 4)) {
-        full_files(m == 4);
+    if ((old == MODE_FULL) != (m == MODE_FULL)) {
+        full_files(m == MODE_FULL);
         if (g_aa_busy && g_aa_busy() && g_aa_input) { g_aa_input(CICAA_IN_BYEBYE, 0, 0); alog("Full screen changed: new session"); }
     }
 }
 static void geom_load(short* g) {
-    static const short def[5][8] = {AAP_GEOM_NORMAL, AAP_GEOM_LEFT, AAP_GEOM_RIGHT, AAP_GEOM_STRETCHED, AAP_GEOM_FULL};
+    static const short def[MODE_COUNT][8] = {AAP_GEOM_NORMAL, AAP_GEOM_CENTRED, AAP_GEOM_LEFT, AAP_GEOM_RIGHT, AAP_GEOM_STRETCHED, AAP_GEOM_FULL};
     int m = screen_mode();
     for (int i = 0; i < 8; ++i) g[i] = def[m][i];
     /* Full screen: full_geom.txt; otherwise geom.txt (optional, e.g. with video.txt on an E60)
        replaces the built-in geometry */
-    int f = open(m == 4 ? AAP_FULL_GEOM : AAP_GEOM_TXT, 0);
+    int f = open(m == MODE_FULL ? AAP_FULL_GEOM : AAP_GEOM_TXT, 0);
     if (f < 0) return;
     char b[80]; int n = read(f, b, sizeof b - 1); close(f);
     if (n <= 0) return;
@@ -760,7 +763,7 @@ static void iba_do(bmw::PluginApp* app, int stopping) {
         ((SetAlpha)vt[14])(g_iba_mgr, 26, 0);
         typedef void (*Enable)(int); ((Enable)iba_a(kLayerHelper))(1); g_iba_layer = 1;
         g_iba.ack(op, 0, 1);
-        menu_hide_for_video();                           /* every mode: black around the picture */
+        if (screen_mode() != MODE_NORMAL) menu_hide_for_video();   /* Normal keeps the CIC menu visible */
         return;
     }
     if (g_iba.stopping && !live_reap()) return;
@@ -1191,7 +1194,7 @@ static bool onConnect(void* obj, const bmw::Parcel&) {
  * favourite button), on Connect and after every button press. It also re-reads the
  * audio mode for the next display start. */
 static void status_line(bmw::PluginApp* app) {
-    static const char* const kMode[5] = {"Normal", "Left", "Right", "Stretched", "Full screen"};
+    static const char* const kMode[MODE_COUNT] = {"Normal", "Centred", "Left", "Right", "Stretched", "Full screen"};
     g_iba_keep_audio = file_exists(AAP_AAUDIO_ON);
     char b[96]; unsigned n = put_str(b, 0, "Screen: ");
     n = put_str(b, n, kMode[screen_mode()]);
@@ -1460,7 +1463,7 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
     g_app = app;
     auto_runtime_init();
     iba_capture_pu();     /* HMI ProcUnit of the loading thread, for native calls */
-    full_files(screen_mode() == 4);          /* Full screen files match the stored mode */
+    full_files(screen_mode() == MODE_FULL);          /* Full screen files match the stored mode */
     if (!g_aux_mtx_ok) g_aux_mtx_ok = pthread_mutex_init(g_aux_mtx, 0) == 0;
     g_aux_stop = 0;
     if (!g_aux_tid_ok) g_aux_tid_ok = pthread_create(&g_aux_tid, 0, &aux_thread, 0) == 0;   /* microphone route, autoconnect */

@@ -8,7 +8,8 @@
 #define AAP_DIR       "/mnt/hbdebug/aap"            /* HDD: binaries + certificate (installer) */
 #define AAP_LOGS_ON   AAP_DIR "/logs.on"            /* exists = logging enabled */
 #define AAP_LOGDIR    AAP_DIR "/logs"               /* log files (only when enabled) */
-#define AAP_ZOOM_ON   AAP_DIR "/zoom.on"            /* screen mode Fullscreen (Zoom Mode button) */
+#define AAP_ZOOM_ON   AAP_DIR "/zoom.on"            /* screen mode Left (old Fullscreen, Zoom Mode button) */
+#define AAP_CENTER_ON AAP_DIR "/center.on"          /* screen mode Centred: 960 px picture at x 160, CIC menu hidden */
 #define AAP_WIDE_ON   AAP_DIR "/wide.on"            /* screen mode Stretched */
 #define AAP_RIGHT_ON  AAP_DIR "/right.on"           /* screen mode Right: 960 px picture at the right edge */
 #define AAP_FULL_ON   AAP_DIR "/full.on"            /* screen mode Full screen 8:3 (writes full_video.txt + full_geom.txt) */
@@ -43,7 +44,8 @@
 #define AAP_UI_MARGIN_RIGHT  80
 /* sx sy sw sh (crop in the 800x480 stream), dx dy dw dh (on the 1280x480 display).
  * x = 256 leaves the CIC's left arc/menu column visible and centres the picture. */
-#define AAP_GEOM_NORMAL     {0, 0, 720, 360, 160, 0,  960, 480}   /* centred, CIC menu hidden, black sides */
+#define AAP_GEOM_NORMAL     {0, 0, 720, 360, 256, 0,  960, 480}   /* CIC menu/arcs visible on the left */
+#define AAP_GEOM_CENTRED    {0, 0, 720, 360, 160, 0,  960, 480}   /* centred, CIC menu hidden, black sides */
 #define AAP_GEOM_LEFT       {0, 0, 720, 360,   0, 0,  960, 480}   /* same size at the left edge */
 #define AAP_GEOM_RIGHT      {0, 0, 720, 360, 320, 0,  960, 480}   /* same size at the right edge */
 #define AAP_GEOM_STRETCHED  {0, 0, 720, 360,   0, 0, 1280, 480}   /* full width, distorted */

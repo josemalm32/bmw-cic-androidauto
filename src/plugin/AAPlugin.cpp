@@ -1253,10 +1253,16 @@ static void add2(bmw::PluginApp* app, unsigned id, unsigned sub, bool (*stub)(vo
 }
 static void map_handlers_init(bmw::PluginApp* app, const KeyHandler& keys, const KeyHandler& focus, const KeyHandler& page) {
     AddMap1 m1 = 0; AddMap2 m2 = 0;
-    void* h = dlopen("libAppFramework.A.so", 2 /* RTLD_NOW */);
-    if (h) {
-        m1 = (AddMap1)dlsym(h, "_ZN3bmw9PluginApp17addHandlerWithMapEjRKNS_8DelegateIbRKNS_3MapIjNS_7VariantEEEvvvEE");
-        m2 = (AddMap2)dlsym(h, "_ZN3bmw9PluginApp17addHandlerWithMapEjjRKNS_8DelegateIbRKNS_3MapIjNS_7VariantEEEvvvEE");
+    /* Global scope first (HmiMain exports its own PluginApp, which is what a direct link
+       bound to), then the library by name. */
+    const char* kM1 = "_ZN3bmw9PluginApp17addHandlerWithMapEjRKNS_8DelegateIbRKNS_3MapIjNS_7VariantEEEvvvEE";
+    const char* kM2 = "_ZN3bmw9PluginApp17addHandlerWithMapEjjRKNS_8DelegateIbRKNS_3MapIjNS_7VariantEEEvvvEE";
+    void* hs[2] = {dlopen(0, 2 /* RTLD_NOW */), 0};
+    for (int i = 0; i < 2 && !(m1 && m2); ++i) {
+        if (i == 1) hs[1] = dlopen("libAppFramework.A.so", 2);
+        if (!hs[i]) continue;
+        m1 = (AddMap1)dlsym(hs[i], kM1);
+        m2 = (AddMap2)dlsym(hs[i], kM2);
     }
     if (m1 && m2) {
         m1(app, AA_KEYS, keys);

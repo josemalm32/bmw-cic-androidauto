@@ -557,7 +557,10 @@ static int iba_restore_sink(bmw::PluginApp* app) {
 static int live_spawn() {
     unlink(AAP_STOP);
     if (!iba_before("spawn cicaalive")) return 0;
-    g_dsp_pid = spawnl(P_NOWAIT, AAP_LIVE, AAP_LIVE, "live", g_logs ? AAP_LOGDIR "/cicaalive.log" : "", (char*)0);
+    /* argv[3] "c13": the 2010 C13 DSP (3.40) logs StartRefClk / first PTS at debug levels 30..60
+       (E9x 4.05: 10), so cicaalive must raise the DSP debug level to see the clock start. */
+    const char* dsp = g_iba_profile && g_iba_profile->xlat == kXlatC13 ? "c13" : "";
+    g_dsp_pid = spawnl(P_NOWAIT, AAP_LIVE, AAP_LIVE, "live", g_logs ? AAP_LOGDIR "/cicaalive.log" : "", dsp, (char*)0);
     alog_val("cicaalive pid", g_dsp_pid);
     if (g_dsp_pid <= 0) { g_dsp_pid = 0; return 0; }
     return 1;

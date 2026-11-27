@@ -4,7 +4,7 @@
  * the plugin's buttons (zoom.on / wide.on, later aaaudio.on). */
 #ifndef AAP_PATHS_H
 #define AAP_PATHS_H
-#define AAP_VERSION   "1.1.1-c13a"
+#define AAP_VERSION   "1.1.1-c13b"
 #define AAP_DIR       "/mnt/hbdebug/aap"            /* HDD: binaries + certificate (installer) */
 #define AAP_LOGS_ON   AAP_DIR "/logs.on"            /* exists = logging enabled */
 #define AAP_LOGDIR    AAP_DIR "/logs"               /* log files (only when enabled) */

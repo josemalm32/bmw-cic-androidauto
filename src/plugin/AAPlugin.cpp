@@ -56,8 +56,9 @@ public:
     void updateModel(unsigned, int);
     PluginApp(IDispatcher&, BasicString<char>, const Bundle& dependencies, const Bundle& parameters);
     void addHandler(unsigned, const Delegate<bool, const Parcel&, void, void, void>&);
-    void addHandlerWithMap(unsigned, const Delegate<bool, const Map<unsigned, Variant>&, void, void, void>&);
-    void addHandlerWithMap(unsigned, unsigned, const Delegate<bool, const Map<unsigned, Variant>&, void, void, void>&);
+    /* addHandlerWithMap is resolved at run time (map_handlers_init): the 2010 framework
+       (E90 C13, B1009) does not have it. */
+    void addHandler(unsigned, unsigned, const Delegate<bool, const Parcel&, void, void, void>&);
     void updateModel(unsigned, const char*);
     void triggerEvent(unsigned);
 private:
@@ -241,6 +242,7 @@ static void aa_forward_key(const unsigned* v, unsigned valid) {
 }
 typedef bmw::Map<unsigned, bmw::Variant> KeyMap;
 typedef bmw::Delegate<bool, const KeyMap&, void, void, void> KeyHandler;
+static void key_dispatch(int focus, const unsigned* values, unsigned valid);
 static void key_sample(int focus, const KeyMap* map) {
     unsigned values[16], valid = 0;
     for (unsigned i = 0; i < 16; ++i) values[i] = 0;
@@ -260,6 +262,9 @@ static void key_sample(int focus, const KeyMap* map) {
             }
         }
     }
+    key_dispatch(focus, values, valid);
+}
+static void key_dispatch(int focus, const unsigned* values, unsigned valid) {
     if (!focus) {
         /* First key on the (empty) AA page after a focus loss: bring the picture back
            instead of sending the key to the phone (fallback for the focus path below). */
@@ -552,7 +557,10 @@ static int iba_restore_sink(bmw::PluginApp* app) {
 static int live_spawn() {
     unlink(AAP_STOP);
     if (!iba_before("spawn cicaalive")) return 0;
-    g_dsp_pid = spawnl(P_NOWAIT, AAP_LIVE, AAP_LIVE, "live", g_logs ? AAP_LOGDIR "/cicaalive.log" : "", (char*)0);
+    /* argv[3] "c13": the 2010 C13 DSP (3.40) logs StartRefClk / first PTS at debug levels 30..60
+       (E9x 4.05: 10), so cicaalive must raise the DSP debug level to see the clock start. */
+    const char* dsp = g_iba_profile && g_iba_profile->xlat == kXlatC13 ? "c13" : "";
+    g_dsp_pid = spawnl(P_NOWAIT, AAP_LIVE, AAP_LIVE, "live", g_logs ? AAP_LOGDIR "/cicaalive.log" : "", dsp, (char*)0);
     alog_val("cicaalive pid", g_dsp_pid);
     if (g_dsp_pid <= 0) { g_dsp_pid = 0; return 0; }
     return 1;
@@ -761,11 +769,14 @@ static void iba_run_noop(void*) {}
 static unsigned long g_iba_run_vt[12];
 static const unsigned long kExecVptr = 0x0922d2b8UL, kExecLoop = 0x08d5fce4UL;
 typedef void* (*IbaCurrentPU)();
+/* CProcUnit executor member: 0x3c8 on E9x-family builds, 0x3b8 on the 2010 C13 build
+ * (C13 HmiMain: pu+0x3b8 passed to the executor add, same pattern as E9x pu+0x3c8). */
+static unsigned long iba_pu_exec_off() { return g_iba_profile && g_iba_profile->xlat == kXlatC13 ? 0x3b8UL : 0x3c8UL; }
 static void iba_capture_pu() {
     if (!iba_profile_select()) return;
     void* pu = ((IbaCurrentPU)iba_a(0x08d5c528UL))();
     if (!pu) return;
-    unsigned long* ex = *(unsigned long**)iba_off(pu, 0x3c8);
+    unsigned long* ex = *(unsigned long**)iba_off(pu, iba_pu_exec_off());
     if ((unsigned long)ex != iba_a(kExecVptr) || ex[5] != iba_a(kExecLoop)) return;
     g_iba_pu = pu; g_iba_marshal_ok = 1;
 }
@@ -787,7 +798,7 @@ static int iba_queue() {
     g_iba_run[0] = (unsigned long)g_iba_run_vt;
     g_iba_pending = 1;
     typedef int (*Add)(void*, void*, void*, int, void*);
-    int id = ((Add)iba_a(0x08d5f9a4UL))(iba_off(g_iba_pu, 0x3c8), (void*)g_iba_epoch, (void*)&iba_cb, 0, (void*)g_iba_run);
+    int id = ((Add)iba_a(0x08d5f9a4UL))(iba_off(g_iba_pu, iba_pu_exec_off()), (void*)g_iba_epoch, (void*)&iba_cb, 0, (void*)g_iba_run);
     if (id == -1) g_iba_pending = 0;
     pthread_mutex_unlock(g_iba_queue_mtx);
     return id != -1;
@@ -1232,6 +1243,82 @@ static void keys_restore() {
     for (int k = 0; k < 2; ++k) if (g_kh[k].slot) { *g_kh[k].slot = g_kh[k].orig; g_kh[k].slot = 0; }
 }
 
+/* bmw::PluginApp::addHandlerWithMap exists from the 2011 framework on (E9x 9283417A, E60,
+ * F30). The 2010 one (E90 C13, B1009-500-1019C) has only the Parcel handlers, and its
+ * HmiMain has no CTerminalUIApp, so the terminalUI key/focus maps are never sent there.
+ * Linking the symbol would stop the plugin from loading on C13: it is looked up instead.
+ * Without it the page event is taken through the Parcel handler (same ids) and the
+ * terminalUI ids only log what arrives, for a first car test. Keys still work through
+ * the panel / steering-wheel hooks (keys_install). */
+typedef void (*AddMap1)(bmw::PluginApp*, unsigned, const KeyHandler&);
+typedef void (*AddMap2)(bmw::PluginApp*, unsigned, unsigned, const KeyHandler&);
+static bool onPageParcel(void* obj, const bmw::Parcel&) { status_line(static_cast<bmw::PluginApp*>(obj)); return false; }
+static bool onTuiParcel(void*, const bmw::Parcel&) { alog("terminalUI parcel event (no map framework)"); return false; }
+static void add2(bmw::PluginApp* app, unsigned id, unsigned sub, bool (*stub)(void*, const bmw::Parcel&)) {
+    Handler h; h.object = app; h.stub = stub; app->addHandler(id, sub, h);
+}
+static void map_handlers_init(bmw::PluginApp* app, const KeyHandler& keys, const KeyHandler& focus, const KeyHandler& page) {
+    AddMap1 m1 = 0; AddMap2 m2 = 0;
+    /* Global scope first (HmiMain exports its own PluginApp, which is what a direct link
+       bound to), then the library by name. */
+    const char* kM1 = "_ZN3bmw9PluginApp17addHandlerWithMapEjRKNS_8DelegateIbRKNS_3MapIjNS_7VariantEEEvvvEE";
+    const char* kM2 = "_ZN3bmw9PluginApp17addHandlerWithMapEjjRKNS_8DelegateIbRKNS_3MapIjNS_7VariantEEEvvvEE";
+    void* hs[2] = {dlopen(0, 2 /* RTLD_NOW */), 0};
+    for (int i = 0; i < 2 && !(m1 && m2); ++i) {
+        if (i == 1) hs[1] = dlopen("libAppFramework.A.so", 2);
+        if (!hs[i]) continue;
+        m1 = (AddMap1)dlsym(hs[i], kM1);
+        m2 = (AddMap2)dlsym(hs[i], kM2);
+    }
+    if (m1 && m2) {
+        m1(app, AA_KEYS, keys);
+        m2(app, AA_SCREEN, 1, focus);
+        m2(app, PAGE_MAIN, 1, page);          /* page opened -> fresh status line */
+        m2(app, PAGE_MAIN_FIRST, 1, page);
+        return;
+    }
+    alog("no addHandlerWithMap (2010 framework): parcel handlers");
+    add(app, AA_KEYS, &onTuiParcel);
+    add2(app, AA_SCREEN, 1, &onTuiParcel);
+    add2(app, PAGE_MAIN, 1, &onPageParcel);
+    add2(app, PAGE_MAIN_FIRST, 1, &onPageParcel);
+}
+
+/* E90 C13 (B1009) iDrive keys. Its HmiMain has no CTerminalUIApp, so the terminalUI key
+ * map never reaches the plugin. CTerminalUIState::onKeyInputEvent(component, key, f12, f13)
+ * (0x08ced5bc) builds exactly that map (fields 11, 12, 13, as on E9x) and is bound as a
+ * signal slot through its GOT entry 0x08f857d0 (R_SH_GLOB_DAT). The entry is replaced
+ * before the AA terminalUI state is created, so the state connects our function; it
+ * calls the original first and then feeds the same values to key_dispatch(). Only with
+ * the C13 profile and only if the GOT entry and the first 32 bytes of the function
+ * match; otherwise nothing is touched. */
+typedef void (*TuiKeyFn)(void*, void*, int, int, int);
+static unsigned long* g_tui_slot = 0;
+static unsigned long g_tui_orig = 0;
+static const unsigned char kTuiKeySig[32] = {
+    0x86,0x2f,0x96,0x2f,0xa6,0x2f,0xb6,0x2f,0xc6,0x2f,0xd6,0x2f,0xe6,0x2f,0xcb,0xff,
+    0x22,0x4f,0x52,0xc7,0x51,0xdc,0x0c,0x3c,0xa8,0x7f,0xa8,0x7f,0xf3,0x6e,0x43,0x6b};
+static void tui_key_hook(void* self, void* component, int key, int f12, int f13) {
+    ((TuiKeyFn)g_tui_orig)(self, component, key, f12, f13);   /* CIC first, unchanged */
+    unsigned v[16];
+    for (int i = 0; i < 16; ++i) v[i] = 0;
+    v[11] = (unsigned)key; v[12] = (unsigned)(f12 & 0xff); v[13] = (unsigned)(f13 & 0xff);
+    key_dispatch(0, v, (1u << 11) | (1u << 12) | (1u << 13));
+}
+static void tui_hook_install() {
+    const IbaProfile* p = iba_profile_select();
+    if (!p || p->xlat != kXlatC13) return;
+    unsigned long* slot = (unsigned long*)0x08f857d0UL;
+    const unsigned char* code = (const unsigned char*)0x08ced5bcUL;
+    int ok = *slot == 0x08ced5bcUL;
+    for (int i = 0; ok && i < 32; ++i) ok = code[i] == kTuiKeySig[i];
+    if (ok) { g_tui_orig = *slot; g_tui_slot = slot; *slot = (unsigned long)&tui_key_hook; }   /* one aligned store */
+    alog_val("tui key hook", ok ? 1 : (int)*slot);
+}
+static void tui_hook_restore() {
+    if (g_tui_slot) { *g_tui_slot = g_tui_orig; g_tui_slot = 0; }
+}
+
 extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
                             const bmw::Bundle& dependencies, const bmw::Bundle& parameters) {
     if (!name || !*name) return 0;
@@ -1244,10 +1331,8 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
     add(app, ACTION_AUDIO, &onSwitchAudio);
     add(app, ACTION_LOGS, &onLogs);
     KeyHandler keys = {app, &onKeys}, focus = {app, &onFocus}, page = {app, &onPageFocus};
-    app->addHandlerWithMap(AA_KEYS, keys);
-    app->addHandlerWithMap(AA_SCREEN, 1, focus);
-    app->addHandlerWithMap(PAGE_MAIN, 1, page);         /* page opened -> fresh status line */
-    app->addHandlerWithMap(PAGE_MAIN_FIRST, 1, page);
+    map_handlers_init(app, keys, focus, page);
+    tui_hook_install();                                  /* E90 C13 only */
     location_init(app);
     g_hmi_tid = pthread_self();
     g_ui_ready = (pthread_mutex_init(g_ui_mtx, 0) == 0);
@@ -1261,6 +1346,7 @@ extern "C" void* aap_create(bmw::IDispatcher& dispatcher, const char* name,
 extern "C" void aap_destroy(void* app) {
     if (!app) return;
     keys_restore();
+    tui_hook_restore();
     auto_runtime_shutdown();
     if (g_iba_target_live && pthread_self() == g_iba_tid) {
         typedef void (*Dtor)(void*); ((Dtor)iba_a(0x08d6ed6cUL))(g_iba_target); g_iba_target_live = 0;

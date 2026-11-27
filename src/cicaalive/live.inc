@@ -348,6 +348,11 @@ static int live(int secs_unused)
           }
           fclose(fp);
       } }
+    /* C13 DSP 3.40: "StartRefClk: avSync:Clk Start ..." is printed at level 60 and
+     * "Video first PTS" at 30 (E9x 4.05: all at 10). At level 10 the clock start is never
+     * seen, the prefill falls back to "assume started now" seconds late and every video
+     * PTS is off -> black screen (car 2026-11-27). */
+    if (g_dsp_c13 && g_dbglvl < 60) g_dbglvl = 60;
     lg("video lead %u ms dsp_dbg=%u mode=%s", (unsigned)(vlead / 1000), g_dbglvl, g_vmode == 1 ? "nopts" : g_vmode == 2 ? "pts-1" : "pts");
     r = ring_open(); if (!r) { lg("ring open failed errno=%d", errno); return 1; }
     r->reader_pid = (uint32_t)getpid();

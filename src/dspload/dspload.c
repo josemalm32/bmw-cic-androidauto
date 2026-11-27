@@ -12,7 +12,8 @@
  * image; flash is never modified. dev-dspipc reloads the firmware from its stored
  * filename= on DSPIPC_REBOOT, so the link redirects it to the patched copy.
  *
- * DSP patch (dvd_dm642.bin, 2363004 bytes, TI boot table, big-endian words):
+ * DSP patch, E9x image (dvd_dm642.bin, 2363004 bytes, TI boot table, big-endian words;
+ * the E90 C13 image, 2356132 bytes, gets the same three patches at its own offsets):
  *   file 0x094518: 0x02016829 -> 0x02019029  vddSetupDecoder width check 720 -> 800
  *                                            (C64x "mvk 0x2d0,a4" at 0x81f147e4)
  *   file 0x1ddcfc: 0x02801728 -> 0x028019a8  H.264 SPS pic_width_in_mbs limit 46 -> 51
@@ -44,14 +45,26 @@
 #define ORIG AAP_DSP_ORIG
 #define DEV  "/dev/dspipc/dm642.0/ctrl"   /* libdspipc opens "%s/ctrl" O_RDWR */
 #define DSPIPC_REBOOT 0x8004050c
-#define IMG_SIZE 2363004L
-
-static const struct { long off; unsigned old_w, new_w; } kPatch[] = {
+struct DspPatch { long off; unsigned old_w, new_w; };
+static const struct DspPatch kPatchE9x[] = {
     { 0x094518L, 0x02016829u, 0x02019029u },
     { 0x1ddcfcL, 0x02801728u, 0x028019a8u },
     { 0x09ba68L, 0x000c0275u, 0x00000001u },   /* no frame dropping after a late frame */
 };
-#define NPATCH ((int)(sizeof kPatch / sizeof kPatch[0]))
+/* E90 C13 (CIC_L6_1009 B1009-500-1019C): same firmware, relocated.
+ *   0x81f199c4 width check, 0x8195216c SPS limit, 0x81f16084 "stw A0,*A5" (skip counter
+ *   0x8190871c; p-bit 0 here, so the NOP is 0x00000000). Found by context match and
+ *   disassembly (04_analysis/dsp_dm642/c13); untested in a car. */
+static const struct DspPatch kPatchC13[] = {
+    { 0x0996f8L, 0x02016829u, 0x02019029u },
+    { 0x1dc2c4L, 0x02801728u, 0x028019a8u },
+    { 0x095db8L, 0x00140274u, 0x00000000u },
+};
+#define N_OF(a) ((int)(sizeof a / sizeof a[0]))
+static const struct { const char *name; long size; const struct DspPatch *p; int n; } kImages[] = {
+    { "E9x 9283417A", 2363004L, kPatchE9x, N_OF(kPatchE9x) },
+    { "E90 C13 B1009", 2356132L, kPatchC13, N_OF(kPatchC13) },
+};
 
 static int dsp_reboot(void)
 {
@@ -87,15 +100,18 @@ static void put_be32(unsigned char *p, unsigned v) { p[0] = v >> 24; p[1] = v >>
 
 static int patch(const char *out)
 {
-    unsigned char *img; long n; int fd, i; char tmp[256];
+    unsigned char *img; long n; int fd, i, k; char tmp[256];
+    const struct DspPatch *kPatch = 0; int npatch = 0;
     fd = open(ORIG, O_RDONLY);
     if (fd < 0) { printf("PATCH open %s err=%d\n", ORIG, errno); return 1; }
     n = lseek(fd, 0, SEEK_END); lseek(fd, 0, SEEK_SET);
-    if (n != IMG_SIZE) { printf("PATCH unknown DSP image size %ld (want %ld)\n", n, IMG_SIZE); close(fd); return 1; }
+    for (k = 0; k < N_OF(kImages); k++)
+        if (n == kImages[k].size) { kPatch = kImages[k].p; npatch = kImages[k].n; printf("PATCH image %s\n", kImages[k].name); break; }
+    if (!kPatch) { printf("PATCH unknown DSP image size %ld\n", n); close(fd); return 1; }
     img = malloc(n);
     if (!img || read(fd, img, n) != n) { printf("PATCH read failed\n"); close(fd); free(img); return 1; }
     close(fd);
-    for (i = 0; i < NPATCH; i++) {
+    for (i = 0; i < npatch; i++) {
         unsigned w = be32(img + kPatch[i].off);
         if (w == kPatch[i].new_w) continue;          /* already patched (source was an older patched copy) */
         if (w != kPatch[i].old_w) { printf("PATCH unknown DSP image (0x%lx = 0x%08x)\n", kPatch[i].off, w); free(img); return 1; }

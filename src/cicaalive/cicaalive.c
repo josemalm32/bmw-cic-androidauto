@@ -47,6 +47,7 @@ int dspipc_drain(void *ch);
 #define ENT_MAX 123
 
 static FILE *g_log; static struct timespec g_t0;
+static int g_dsp_c13;               /* argv[3] "c13": 2010 DSP 3.40, clock messages at level 60 */
 static unsigned g_dbglvl = 10;      /* DSP debug level at session start (vlead_ms.txt "dbg100" -> 100) */
 static void lg(const char *f, ...)
 {
@@ -402,6 +403,7 @@ int main(int argc, char **argv)
       sigaction(SIGSEGV, &sa, 0); sigaction(SIGBUS, &sa, 0); }
     { pthread_t lt; pthread_create(&lt, 0, logger, 0); }
     lg("cicaalive " AAP_VERSION " start pid=%d", getpid());
+    g_dsp_c13 = argc > 3 && !strcmp(argv[3], "c13");
     rc = live(0);
     g_quit = 1; usleep(120000); mq_drain();
     lg("cicaalive exit rc=%d", rc);

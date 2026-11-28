@@ -91,6 +91,7 @@ void* dlopen(const char*, int);
 void* dlsym(void*, const char*);
 int spawnl(int, const char*, const char*, ...);
 int waitpid(int, int*, int);
+int kill(int, int);
 int shm_open(const char*, int, ...);
 void* mmap(void*, unsigned int, int, int, int, long);
 int* __get_errno_ptr(void);
@@ -101,6 +102,8 @@ int* __get_errno_ptr(void);
 #define P_NOWAIT 1
 #define WNOHANG 0x0040
 #define O_WRONLY 0x0001
+#define O_RDWR 0x0002
+#define O_NONBLOCK 0x0080
 #define O_APPEND 0x0008
 #define O_CREAT  0x0100
 #define O_TRUNC  0x0200
@@ -202,6 +205,7 @@ static volatile int g_aa_polling = 0;
 static volatile int g_live_disp = 0;      /* AA video on screen */
 static volatile int g_live_user = 0;      /* user wants AA on screen */
 static volatile int g_focus_left = 0;     /* AA display was left by a focus loss (MENU, PDC...) */
+static volatile int g_carplay_mode;
 static long g_live_disp_ms = 0;
 
 /* ---------------- iDrive -> Android keycodes ---------------- */
@@ -227,10 +231,29 @@ static void keymap_load() {
     }
 }
 static void aa_forward_key(const unsigned* v, unsigned valid) {
-    if (!g_live_disp || !g_aa_input || !(valid & (1u << 11))) return;
+    if (!(valid & (1u << 11))) return;
     unsigned key = v[11] & 0xffff, steps = v[11] >> 16; if (!steps) steps = 1;
     unsigned f12 = (valid & (1u << 12)) ? v[12] : 1;
     int down = f12 != 0;
+    if (!g_live_disp) return;
+    if (g_carplay_mode) {
+        static const unsigned char codes[] = {0, 0, 4, 0, 0, 0, 0, 0, 23, 19, 20, 21, 22};
+        const int rotary = key == 13 || key == 14;
+        const unsigned code = rotary ? 65536 : key < sizeof codes ? codes[key] : 0;
+        if (!code) return;
+        const int fd = open(AAP_CARPLAY_INPUT, O_RDWR | O_NONBLOCK);
+        if (fd < 0) return;
+        char line[40];
+        unsigned n = put_str(line, 0, rotary ? "R " : "K ");
+        n = put_int(line, n, (int)code);
+        n = put_str(line, n, " ");
+        n = put_int(line, n, rotary ? (key == 13 ? (int)steps : -(int)steps) : down);
+        line[n++] = '\n';
+        write(fd, line, n);
+        close(fd);
+        return;
+    }
+    if (!g_aa_input) return;
     if (g_logs) {
         char b[80]; unsigned n = put_str(b, 0, "KEY "); n = put_int(b, n, (int)key);
         n = put_str(b, n, " steps="); n = put_int(b, n, (int)steps); n = put_str(b, n, " down="); n = put_int(b, n, down); b[n] = 0; alog(b);
@@ -552,7 +575,7 @@ static int iba_restore_sink(bmw::PluginApp* app) {
 static int live_spawn() {
     unlink(AAP_STOP);
     if (!iba_before("spawn cicaalive")) return 0;
-    g_dsp_pid = spawnl(P_NOWAIT, AAP_LIVE, AAP_LIVE, "live", g_logs ? AAP_LOGDIR "/cicaalive.log" : "", (char*)0);
+    g_dsp_pid = spawnl(P_NOWAIT, AAP_LIVE, AAP_LIVE, g_carplay_mode ? "carplay" : "live", g_logs ? AAP_LOGDIR "/cicaalive.log" : "", (char*)0);
     alog_val("cicaalive pid", g_dsp_pid);
     if (g_dsp_pid <= 0) { g_dsp_pid = 0; return 0; }
     return 1;
@@ -572,7 +595,11 @@ static int live_prepare(bmw::PluginApp* app) {
 }
 static int live_reap() {
     if (!g_dsp_pid) return 1;
-    int f = open(AAP_STOP, O_WRONLY | O_CREAT | O_TRUNC, 0644); if (f >= 0) close(f);
+    if (g_carplay_mode) kill(g_dsp_pid, 15 /* SIGTERM */);
+    else {
+        int f = open(AAP_STOP, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (f >= 0) close(f);
+    }
     int st = 0; int r = waitpid(g_dsp_pid, &st, WNOHANG);
     int error = r < 0 ? errno : 0;
     if (r < 0 && error != ECHILD) return 0;
@@ -966,6 +993,37 @@ static int live_video_ready() {
     if (g_ring[0] != 0x4c495631u) return 0;
     return g_ring[7] > 0;
 }
+static int carplay_video_ready() {
+    static volatile unsigned* ring;
+    if (!ring) {
+        int fd = shm_open("/cicaa_carplay", 0);
+        if (fd < 0) return 0;
+        void* m = mmap(0, 4096, 0x100, 1, fd, 0);
+        close(fd);
+        if (m == (void*)-1) return 0;
+        ring = (volatile unsigned*)m;
+    }
+    return ring[0] == 0x4c495631u && ring[7] > 0;
+}
+static void* carplay_poll_thread(void*) {
+    int requested = 0;
+    if (!dsp_patch_ensure()) {
+        ui(g_app, MODEL_STATUS, "Could not load the patched DSP (reinstall)");
+        g_aa_polling = 0;
+        return 0;
+    }
+    while (file_exists(AAP_CARPLAY_INPUT)) {
+        const int want = g_live_user && carplay_video_ready();
+        if (want != requested) {
+            requested = want;
+            auto_request(want ? 1 : 4);
+        }
+        sleep(1);
+    }
+    if (requested) auto_request(4);
+    g_aa_polling = 0;
+    return 0;
+}
 static void status_show(bmw::PluginApp* app, const char* aa) {
     char line[200], v[160];
     pthread_mutex_lock(g_auto_mtx); copy_str(v, g_auto_text, sizeof v); pthread_mutex_unlock(g_auto_mtx);
@@ -1009,15 +1067,27 @@ static bool onConnect(void* obj, const bmw::Parcel&) {
     keys_install();
     if (g_aa_polling) {             /* AA running in background -> bring it back */
         g_live_user = 1;
-        if (g_aa_proj && !g_aa_proj() && g_aa_project) g_aa_project();
+        if (!g_carplay_mode && g_aa_proj && !g_aa_proj() && g_aa_project) g_aa_project();
         /* Start the display right here as well: if the poll thread's earlier request was
            dropped (worker still closing after a quick OPTION -> Connect), pressing Connect
            again now always brings AA back. auto_request() ignores it while busy. */
-        if (!g_live_disp && live_video_ready()) auto_request(1);
+        if (!g_live_disp && (g_carplay_mode ? carplay_video_ready() : live_video_ready())) auto_request(1);
         return true;
     }
     if (auto_busy_control() || g_iba.owns_resources() || g_iba_layer || g_iba_source_changed) {
         ui(app, MODEL_STATUS, "Closing previous video, wait a few seconds");
+        return true;
+    }
+    g_carplay_mode = file_exists(AAP_CARPLAY_INPUT);
+    if (g_carplay_mode) {
+        g_live_user = 1;
+        g_aa_polling = 1;
+        if (spawn(&carplay_poll_thread) != 0) {
+            g_aa_polling = 0;
+            ui(app, MODEL_STATUS, "Error starting CarPlay display");
+        } else {
+            ui(app, MODEL_STATUS, "Waiting for CarPlay video...");
+        }
         return true;
     }
     if (!g_aa_start) {

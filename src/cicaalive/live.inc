@@ -185,9 +185,9 @@ static int send_audio_frame(int silent)
 }
 
 /* ---------------- ring reader ---------------- */
-static ring_hdr *ring_open(void)
+static ring_hdr *ring_open(const char *name)
 {
-    int fd = shm_open(RING_NAME, O_RDWR | O_CREAT, 0666); void *m; ring_hdr *r;
+    int fd = shm_open(name, O_RDWR | O_CREAT, 0666); void *m; ring_hdr *r;
     if (fd < 0) return 0;
     if (ftruncate(fd, (off_t)RING_BYTES)) { close(fd); return 0; }
     m = mmap(0, RING_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0); close(fd);
@@ -326,10 +326,9 @@ static int live_session(ring_hdr *r, uint32_t vlead)
     }
 }
 
-static int live(int secs_unused)
+static int live(int carplay)
 {
     ring_hdr *r; int rc = 1, f, order[4], n = 0, i; uint32_t vlead = AAP_VLEAD_MS * 1000u;
-    (void)secs_unused;
     /* vlead_ms.txt: a number (50..2000 ms), or EXPERIMENTAL "nopts" / "pts-1";
      * optional 2nd word "dbg100" (diagnostic, logs ON only matters).
      * NOTE (car 2026-11-10): nopts -> frames skipped at output, pts-1 -> frames held
@@ -349,10 +348,10 @@ static int live(int secs_unused)
           fclose(fp);
       } }
     lg("video lead %u ms dsp_dbg=%u mode=%s", (unsigned)(vlead / 1000), g_dbglvl, g_vmode == 1 ? "nopts" : g_vmode == 2 ? "pts-1" : "pts");
-    r = ring_open(); if (!r) { lg("ring open failed errno=%d", errno); return 1; }
+    r = ring_open(carplay ? CARPLAY_RING_NAME : RING_NAME); if (!r) { lg("ring open failed errno=%d", errno); return 1; }
     r->reader_pid = (uint32_t)getpid();
     g_ring = r;
-    g_ar = aring_open();
+    g_ar = carplay ? 0 : aring_open();
     lg("RING attached size=%u cfg_len=%u frames_in=%u drop=%u %ux%u audio_ring=%s", (unsigned)r->size, (unsigned)r->cfg_len,
        (unsigned)r->frames_in, (unsigned)r->frames_drop, (unsigned)r->width, (unsigned)r->height, g_ar ? "ok" : "FAILED");
     (void)f; order[n++] = FMT_AAC;   /* phone AAC passthrough (silent AAC until the phone sends audio) */

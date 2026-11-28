@@ -1,0 +1,4 @@
+Upstream: https://github.com/JayJay3071/nbt-android-auto
+Revision: 3d1a4164e7b58b519f65149d558fb72983a5e6e3
+Imported src/carplay only. See per-file copyright and SPDX notices.
+Ported as a standalone experimental CIC receiver. See docs/CARPLAY_BENCH.md.

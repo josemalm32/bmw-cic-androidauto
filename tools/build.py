@@ -129,6 +129,43 @@ def build_libcicaa(t, b, mbedtls):
     return lib
 
 
+def build_carplay(t, b, mbedtls, deps):
+    """Build the GPL receiver separately from the Android Auto USB payload."""
+    cp = SRC / 'carplay'
+    lwip = deps / 'lwip/src'
+    mono = deps / 'monocypher/src'
+    for required in (lwip / 'core/init.c', mono / 'monocypher.c'):
+        if not required.is_file():
+            raise SystemExit(f'CarPlay dependency missing: {required}')
+    flags = ['-m4', '-ml', '-std=gnu99', '-D_QNX_SOURCE', '-Os',
+             '-DMBEDTLS_CONFIG_FILE=<carplay_tls_config.h>']
+    flags += ['-I' + str(p) for p in (
+        cp, cp / 'lwip_port', lwip / 'include', mono, mono / 'optional',
+        SRC / 'libcicaa', mbedtls / 'include', mbedtls / 'library')]
+    patched = patched_sources(b, mbedtls)
+    tls = [patched.get(f.name, f) for f in sorted((mbedtls / 'library').glob('*.c'))
+           if f.name not in ('net_sockets.c', 'timing.c')]
+    network = sorted((lwip / 'core').glob('*.c'))
+    network += sorted((lwip / 'core/ipv6').glob('*.c'))
+    network += [lwip / ('api/' + name + '.c') for name in
+                ('api_lib', 'api_msg', 'err', 'netbuf', 'sockets', 'tcpip')]
+    network += [lwip / 'netif/ethernet.c']
+    crypto = [mono / 'monocypher.c', mono / 'optional/monocypher-ed25519.c']
+    receiver = sorted(cp.glob('cp_*.c'))
+    receiver.remove(cp / 'cp_net_posix.c')
+    receiver += [cp / 'nbt_carplay.c', cp / 'lwip_port/sys_arch.c']
+    obj = b / 'carplay-obj'
+    obj.mkdir(parents=True, exist_ok=True)
+    objects = []
+    for index, src in enumerate(tls + network + crypto + receiver):
+        target = obj / f'{index}-{src.stem}.o'
+        t.run('ntosh-gcc-3.3.5', flags + ['-c', src, '-o', target])
+        objects.append(target)
+    out = b / 'cic_carplay'
+    t.run('ntosh-gcc-3.3.5', ['-m4', '-ml', '-o', out] + objects + ['-lusbdi', '-lsocket', '-lm'])
+    return out
+
+
 def build_cicaalive(t, b):
     stubs = b / 'stubs'
     stubs.mkdir(exist_ok=True)
@@ -176,6 +213,7 @@ def build_plugin(t, b):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', default=str(ROOT / 'out'))
+    ap.add_argument('--carplay-deps', type=Path, help='build only the experimental CarPlay receiver using this dependency folder')
     args = ap.parse_args()
     out = Path(args.out)
     b = out / 'build'
@@ -184,6 +222,9 @@ def main():
     if not (mbedtls / 'library/ssl_tls.c').exists():
         raise SystemExit(f'mbed TLS 3.6.7 not found at {mbedtls} (set MBEDTLS_DIR)')
     t = Tool()
+    if args.carplay_deps is not None:
+        print(build_carplay(t, b, mbedtls, args.carplay_deps.resolve()))
+        return
     ver = version()
     print('AAPlugin', ver)
     files = {

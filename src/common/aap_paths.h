@@ -16,6 +16,7 @@
 #define AAP_DSPLOAD   AAP_DIR "/dspload"
 #define AAP_DSP_IMG   AAP_DIR "/dvd_dm642_aa.bin"   /* DSP image patched at install from the car's own copy */
 #define AAP_DSP_ORIG  "/mnt/EFS_RO/DSP/DM642/dvd_dm642.bin"
+#define AAP_CARPLAY_INPUT "/tmp/aap.carplay.input"
 #define AAP_STOP      "/dev/shmem/aap.stop"         /* RAM: asks cicaalive to stop */
 #define AAP_SEED      "/dev/shmem/aap.seed"         /* RAM: entropy chaining (CIC has no /dev/random) */
 /* Optional read-only overrides (never created by the plugin): */

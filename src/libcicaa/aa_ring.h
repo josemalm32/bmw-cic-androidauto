@@ -6,6 +6,7 @@
 #define AA_RING_H
 #include <stdint.h>
 #define RING_NAME   "/cicaa_live"
+#define CARPLAY_RING_NAME "/cicaa_carplay"
 #define RING_MAGIC  0x4c495631u   /* 'LIV1' */
 #define RING_DATA   (2u*1024u*1024u)
 #define RING_CFGMAX 512u

@@ -57,7 +57,10 @@ static void lg(const char *f, ...)
     fprintf(g_log, "%9.3f ", s); va_start(a, f); vfprintf(g_log, f, a); va_end(a);
     fputc('\n', g_log); fflush(g_log);
 }
-static int stop_requested(void) { return access(AAP_STOP, F_OK) == 0; }
+static volatile sig_atomic_t g_carplay_stop;
+static int g_carplay;
+static void stop_carplay(int sig) { (void)sig; g_carplay_stop = 1; }
+static int stop_requested(void) { return g_carplay ? g_carplay_stop : access(AAP_STOP, F_OK) == 0; }
 static uint64_t now_us(void)
 { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (uint64_t)t.tv_sec*1000000u + t.tv_nsec/1000u; }
 
@@ -402,7 +405,12 @@ int main(int argc, char **argv)
       sigaction(SIGSEGV, &sa, 0); sigaction(SIGBUS, &sa, 0); }
     { pthread_t lt; pthread_create(&lt, 0, logger, 0); }
     lg("cicaalive " AAP_VERSION " start pid=%d", getpid());
-    rc = live(0);
+    g_carplay = argc > 1 && !strcmp(argv[1], "carplay");
+    if (g_carplay) {
+        signal(SIGTERM, stop_carplay);
+        signal(SIGINT, stop_carplay);
+    }
+    rc = live(g_carplay);
     g_quit = 1; usleep(120000); mq_drain();
     lg("cicaalive exit rc=%d", rc);
     if (g_log) fclose(g_log);
